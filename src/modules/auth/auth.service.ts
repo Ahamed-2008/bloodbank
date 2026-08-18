@@ -1,21 +1,14 @@
-import {
-  Injectable,
-  BadRequestException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import * as admin from 'firebase-admin';
 
 @Injectable()
 export class AuthService {
   private supabase: SupabaseClient;
-  private otpStore = new Map<string, { otp: string; expiresAt: Date }>();
 
-  constructor(
-    private jwtService: JwtService,
-    private configService: ConfigService,
-  ) {
+  constructor(private jwtService: JwtService, private configService: ConfigService) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
     const supabaseKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
 
@@ -24,73 +17,50 @@ export class AuthService {
 
     this.supabase = createClient(supabaseUrl, supabaseKey);
   }
-
-  // ─── Send OTP ───────────────────────────────────────────────────
-  async sendOtp(phone: string): Promise<{ message: string }> {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiryMinutes =
-      this.configService.get<number>('OTP_EXPIRY_MINUTES') || 10;
-    const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
-
-    this.otpStore.set(phone, { otp, expiresAt });
-
-    // TODO: Replace with Twilio SMS in production
-    console.log(`OTP for ${phone}: ${otp}`);
-
-    return { message: 'OTP sent successfully' };
-  }
-
-  // ─── Verify OTP ─────────────────────────────────────────────────
-  async verifyOtp(
-    phone: string,
-    otp: string,
+  // Verify Firebase ID token and issue backend JWT
+  async signInWithFirebaseToken(
+    idToken: string,
   ): Promise<{
     token: string;
     isNewUser: boolean;
     role: string;
   }> {
-    // Validate OTP
-    const stored = this.otpStore.get(phone);
-
-    if (!stored) {
-      throw new BadRequestException('OTP not found. Please request a new one.');
+    let decoded: admin.auth.DecodedIdToken;
+    try {
+      decoded = await admin.auth().verifyIdToken(idToken);
+    } catch (err) {
+      throw new UnauthorizedException('Invalid or expired Firebase ID token.');
     }
 
-    if (new Date() > stored.expiresAt) {
-      this.otpStore.delete(phone);
-      throw new BadRequestException('OTP has expired. Please request a new one.');
-    }
+    const phone = decoded.phone_number;
 
-    if (stored.otp !== otp) {
-      throw new UnauthorizedException('Invalid OTP.');
+    if (!phone) {
+      throw new BadRequestException('Firebase ID token does not contain a phone number.');
     }
-
-    // OTP valid — delete immediately (one-time use)
-    this.otpStore.delete(phone);
 
     // ── Check admins table first ──
-    const { data: admin } = await this.supabase
+    const { data: adminRow } = await this.supabase
       .from('admins')
       .select('admin_id, role, is_active')
       .eq('phone', phone)
       .single();
 
-      if (admin) {
-      if (!admin.is_active) {
+    if (adminRow) {
+      if (!adminRow.is_active) {
         throw new UnauthorizedException('Your admin account has been deactivated.');
       }
 
       const token = this.jwtService.sign({
-        sub: admin.admin_id,
+        sub: adminRow.admin_id,
         phone,
         role: 'admin',
-        admin_role: admin.role,
+        admin_role: adminRow.role,
       });
 
       return { token, isNewUser: false, role: 'admin' };
     }
 
-    // ── Check hospital_staff table first ──
+    // ── Check hospital_staff table ──
     const { data: staffMember } = await this.supabase
       .from('hospital_staff')
       .select('staff_id, hospital_id, role, is_active')
@@ -125,7 +95,7 @@ export class AuthService {
     let isNewUser = false;
 
     if (!existingUser) {
-      // Create new donor account
+      // Create new donor account (default placeholder values)
       const { data: newUser, error } = await this.supabase
         .from('users')
         .insert({

@@ -100,45 +100,48 @@ import {
   
       if (!user) throw new NotFoundException('User not found.');
   
-      // PostGIS expects coordinates as WKT format
-      const coordinates = `POINT(${dto.longitude} ${dto.latitude})`;
-  
-      // Check if location record already exists
+// Check if location record already exists
       const { data: existing } = await this.supabase
         .from('user_locations')
         .select('location_id')
         .eq('user_id', userId)
         .eq('is_primary', true)
         .single();
-  
+
       if (existing) {
-        // Update existing location
-        const { error } = await this.supabase
-          .from('user_locations')
-          .update({
-            coordinates,
-            pincode: dto.pincode,
-            city: dto.city,
-            state: dto.state,
-            updated_at: new Date(),
-          })
-          .eq('location_id', existing.location_id);
-  
-        if (error) throw new BadRequestException('Failed to update location.');
+        const { error: updateLocationError } = await this.supabase.rpc(
+          'upsert_user_location',
+          {
+            p_user_id: userId,
+            p_latitude: dto.latitude,
+            p_longitude: dto.longitude,
+            p_pincode: dto.pincode,
+            p_city: dto.city,
+            p_state: dto.state,
+            p_is_primary: true,
+          },
+        );
+
+        if (updateLocationError) {
+          throw new BadRequestException('Failed to update location.');
+        }
       } else {
-        // Insert new location
-        const { error } = await this.supabase
-          .from('user_locations')
-          .insert({
-            user_id: userId,
-            coordinates,
-            pincode: dto.pincode,
-            city: dto.city,
-            state: dto.state,
-            is_primary: true,
-          });
-  
-        if (error) throw new BadRequestException('Failed to save location.');
+        const { error: saveLocationError } = await this.supabase.rpc(
+          'upsert_user_location',
+          {
+            p_user_id: userId,
+            p_latitude: dto.latitude,
+            p_longitude: dto.longitude,
+            p_pincode: dto.pincode,
+            p_city: dto.city,
+            p_state: dto.state,
+            p_is_primary: true,
+          },
+        );
+
+        if (saveLocationError) {
+          throw new BadRequestException('Failed to save location.');
+        }
       }
   
       return { message: 'Location updated successfully.' };

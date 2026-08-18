@@ -173,15 +173,17 @@ import {
         throw new BadRequestException('Failed to accept alert.');
       }
   
-      // Update alert accepted count
-      await this.supabase
-        .from('alerts')
-        .update({
-          accepted_count: this.supabase.rpc('increment_accepted_count', {
-            p_alert_id: alertId,
-          }),
-        })
-        .eq('alert_id', alertId);
+      // Update alert accepted count via RPC.
+      const { error: incrementAcceptedCountError } = await this.supabase.rpc(
+        'increment_accepted_count',
+        {
+          p_alert_id: alertId,
+        },
+      );
+
+      if (incrementAcceptedCountError) {
+        throw new BadRequestException('Failed to update alert accepted count.');
+      }
   
       // Update notification record
       await this.supabase

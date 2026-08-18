@@ -37,30 +37,31 @@ import {
         );
       }
   
-      const coordinates = `POINT(${dto.longitude} ${dto.latitude})`;
-  
-      // Create hospital record
-      const { data: hospital, error: hospitalError } = await this.supabase
-        .from('hospitals')
-        .insert({
-          name: dto.name,
-          registration_number: dto.registration_number,
-          hospital_type: dto.hospital_type,
-          contact_name: dto.contact_name,
-          contact_phone: dto.contact_phone,
-          contact_email: dto.contact_email,
-          coordinates,
-          address: dto.address,
-          pincode: dto.pincode,
-          city: dto.city,
-          state: dto.state,
-          is_verified: false,
-          is_active: false,
-        })
-        .select('hospital_id')
-        .single();
-  
-      if (hospitalError || !hospital) {
+const { data: hospital, error: hospitalError } = await this.supabase.rpc(
+        'create_hospital_record',
+        {
+          p_name: dto.name,
+          p_registration_number: dto.registration_number,
+          p_hospital_type: dto.hospital_type,
+          p_contact_name: dto.contact_name,
+          p_contact_phone: dto.contact_phone,
+          p_contact_email: dto.contact_email,
+          p_latitude: dto.latitude,
+          p_longitude: dto.longitude,
+          p_address: dto.address,
+          p_pincode: dto.pincode,
+          p_city: dto.city,
+          p_state: dto.state,
+        },
+      );
+
+      if (hospitalError || !hospital || hospital.length === 0) {
+        throw new BadRequestException('Failed to register hospital.');
+      }
+
+      const hospitalId = hospital[0]?.hospital_id;
+
+      if (!hospitalId) {
         throw new BadRequestException('Failed to register hospital.');
       }
   
@@ -68,7 +69,7 @@ import {
       const { error: staffError } = await this.supabase
         .from('hospital_staff')
         .insert({
-          hospital_id: hospital.hospital_id,
+          hospital_id: hospitalId,
           name: dto.contact_name,
           phone: dto.contact_phone,
           email: dto.contact_email,
@@ -84,7 +85,7 @@ import {
       const { error: verificationError } = await this.supabase
         .from('hospital_verifications')
         .insert({
-          hospital_id: hospital.hospital_id,
+          hospital_id: hospitalId,
           license_number: dto.license_number,
           license_doc_url: 'pending_upload',
           license_issued_at: dto.license_issued_at,
@@ -98,7 +99,7 @@ import {
   
       return {
         message: 'Hospital registered successfully. Awaiting admin verification.',
-        hospital_id: hospital.hospital_id,
+        hospital_id: hospitalId,
       };
     }
   

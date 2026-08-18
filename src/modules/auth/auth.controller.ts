@@ -1,20 +1,17 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { SendOtpDto, VerifyOtpDto } from './auth.dto';
+import { VerifyIdTokenDto } from './auth.dto';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('send-otp')
+  // Firebase Phone Auth flow:
+  // the client verifies the user's phone number in Firebase, receives a Firebase ID
+  // token, and then calls this endpoint to exchange that token for the backend JWT.
+  @Post('sign-in')
   @HttpCode(HttpStatus.OK)
-  sendOtp(@Body() dto: SendOtpDto) {
-    return this.authService.sendOtp(dto.phone);
-  }
-
-  @Post('verify-otp')
-  @HttpCode(HttpStatus.OK)
-  verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.authService.verifyOtp(dto.phone, dto.otp);
+  signIn(@Body() dto: VerifyIdTokenDto) {
+    return this.authService.signInWithFirebaseToken(dto.idToken);
   }
 }

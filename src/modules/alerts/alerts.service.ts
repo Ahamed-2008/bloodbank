@@ -309,19 +309,34 @@ import {
           last_donated_at: now,
           eligible_from: eligibleFrom,
           is_eligible: false,
-          reward_points: this.supabase.rpc('increment_points', {
-            p_user_id: response.user_id,
-            p_points: 100,
-          }),
           updated_at: now,
         })
         .eq('user_id', response.user_id);
+
+      const { error: incrementPointsError } = await this.supabase.rpc(
+        'increment_points',
+        {
+          p_user_id: response.user_id,
+          p_points: 100,
+        },
+      );
+
+      if (incrementPointsError) {
+        throw new BadRequestException('Failed to update donor reward points.');
+      }
   
       // Update donor score
-      await this.supabase.rpc('increment_donor_score', {
+      const { error: incrementDonorScoreError } = await this.supabase.rpc(
+        'increment_donor_score',
+        {
         p_user_id: response.user_id,
         p_delta: 10,
-      });
+        },
+      );
+
+      if (incrementDonorScoreError) {
+        throw new BadRequestException('Failed to update donor score.');
+      }
   
       // Log score event
       await this.supabase

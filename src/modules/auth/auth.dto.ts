@@ -1,17 +1,10 @@
-import { IsString, IsPhoneNumber, IsNumberString, Length } from 'class-validator';
+import { IsString } from 'class-validator';
 
-export class SendOtpDto {
+/**
+ * Firebase Phone Auth payload:
+ * the client submits a Firebase ID token that has already been verified by Firebase.
+ */
+export class VerifyIdTokenDto {
   @IsString()
-  @IsPhoneNumber('IN')
-  phone: string;
-}
-
-export class VerifyOtpDto {
-  @IsString()
-  @IsPhoneNumber('IN')
-  phone: string;
-
-  @IsNumberString()
-  @Length(6, 6)
-  otp: string;
+  idToken: string;
 }

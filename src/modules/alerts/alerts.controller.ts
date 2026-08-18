@@ -40,7 +40,7 @@ import {
       return this.alertsService.getHospitalAlerts(req.user.hospitalId);
     }
   
-    // Public — donors need to see alert details
+    // Authenticated users (any role) can view alert details; no public access.
     @Get(':id')
     getAlertById(@Param('id') id: string) {
       return this.alertsService.getAlertById(id);
