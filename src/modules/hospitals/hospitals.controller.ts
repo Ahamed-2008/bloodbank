@@ -12,9 +12,11 @@ import {
   import { JwtAuthGuard } from '../auth/jwt-auth.guard';
   import { RolesGuard } from '../../common/guards/roles.guard';
   import { Roles } from '../../common/decorators/roles.decorator';
+  import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
   import { RegisterHospitalDto, AddStaffDto } from './hospitals.dto';
   
   @Controller('hospitals')
+  @ApiTags('Hospitals')
   export class HospitalsController {
     constructor(private readonly hospitalsService: HospitalsService) {}
   
@@ -28,6 +30,7 @@ import {
     // Hospital staff — JWT required
     @Get('profile')
     @UseGuards(JwtAuthGuard, RolesGuard)
+    @ApiBearerAuth()
     @Roles('hospital_staff')
     getProfile(@Request() req) {
       return this.hospitalsService.getHospitalProfile(req.user.hospitalId);
@@ -35,6 +38,7 @@ import {
   
     @Post('staff')
     @UseGuards(JwtAuthGuard, RolesGuard)
+    @ApiBearerAuth()
     @Roles('hospital_staff')
     @HttpCode(HttpStatus.CREATED)
     addStaff(@Request() req, @Body() dto: AddStaffDto) {
@@ -47,6 +51,7 @@ import {
   
     @Get('staff')
     @UseGuards(JwtAuthGuard, RolesGuard)
+    @ApiBearerAuth()
     @Roles('hospital_staff')
     getStaff(@Request() req) {
       return this.hospitalsService.getStaff(req.user.hospitalId);

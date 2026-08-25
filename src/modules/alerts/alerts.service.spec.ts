@@ -8,11 +8,16 @@ jest.mock('@supabase/supabase-js', () => ({
 }));
 
 describe('AlertsService', () => {
-  it('updates donor fields without RPC payload injection and runs points/score RPCs explicitly', async () => {
-    const rpcMock = jest
-      .fn()
-      .mockResolvedValueOnce({ error: null })
-      .mockResolvedValueOnce({ error: null });
+  it('confirms the donation through the atomic confirmation RPC', async () => {
+    const rpcMock = jest.fn().mockResolvedValue({
+      data: [
+        {
+          donor_locked_until: '2026-11-23T00:00:00.000Z',
+          alert_status: 'Fulfilled',
+        },
+      ],
+      error: null,
+    });
 
     let capturedUsersUpdatePayload: Record<string, unknown> | undefined;
 
@@ -110,15 +115,11 @@ describe('AlertsService', () => {
 
     await service.confirmDonation('alert-1', 'resp-1', 'hospital-1');
 
-    expect(capturedUsersUpdatePayload).toBeDefined();
-    expect(capturedUsersUpdatePayload).not.toHaveProperty('reward_points');
-    expect(rpcMock).toHaveBeenNthCalledWith(1, 'increment_points', {
+    expect(capturedUsersUpdatePayload).toBeUndefined();
+    expect(rpcMock).toHaveBeenCalledWith('confirm_donation', {
+      p_alert_id: 'alert-1',
+      p_response_id: 'resp-1',
       p_user_id: 'user-1',
-      p_points: 100,
-    });
-    expect(rpcMock).toHaveBeenNthCalledWith(2, 'increment_donor_score', {
-      p_user_id: 'user-1',
-      p_delta: 10,
     });
   });
 });

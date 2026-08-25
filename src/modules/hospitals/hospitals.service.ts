@@ -56,6 +56,12 @@ const { data: hospital, error: hospitalError } = await this.supabase.rpc(
       );
 
       if (hospitalError || !hospital || hospital.length === 0) {
+        console.error('Hospital RPC failed:', {
+          code: hospitalError?.code,
+          message: hospitalError?.message,
+          details: hospitalError?.details,
+          hint: hospitalError?.hint,
+        });
         throw new BadRequestException('Failed to register hospital.');
       }
 
@@ -78,6 +84,12 @@ const { data: hospital, error: hospitalError } = await this.supabase.rpc(
         });
   
       if (staffError) {
+          console.error('Hospital staff insert failed:', {
+            code: staffError.code,
+            message: staffError.message,
+            details: staffError.details,
+            hint: staffError.hint,
+          });
         throw new BadRequestException('Failed to create staff account.');
       }
   
@@ -94,6 +106,12 @@ const { data: hospital, error: hospitalError } = await this.supabase.rpc(
         });
   
       if (verificationError) {
+          console.error('Hospital verification insert failed:', {
+            code: verificationError.code,
+            message: verificationError.message,
+            details: verificationError.details,
+            hint: verificationError.hint,
+          });
         throw new BadRequestException('Failed to save license details.');
       }
   

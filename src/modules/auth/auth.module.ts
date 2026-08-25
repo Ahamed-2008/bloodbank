@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import * as admin from 'firebase-admin';
+import { resolve } from 'node:path';
 
 // Initialize firebase-admin when this module is loaded for Firebase Phone Auth
 // token verification. Supports either GOOGLE_APPLICATION_CREDENTIALS (file path)
@@ -18,7 +19,7 @@ function initializeFirebase(configService: ConfigService) {
 
   if (gacPath) {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const key = require(gacPath);
+    const key = require(resolve(process.cwd(), gacPath));
     admin.initializeApp({ credential: admin.credential.cert(key) });
     return;
   }

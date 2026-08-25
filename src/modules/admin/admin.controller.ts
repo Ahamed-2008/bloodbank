@@ -15,10 +15,13 @@ import {
   import { RolesGuard } from '../../common/guards/roles.guard';
   import { Roles } from '../../common/decorators/roles.decorator';
   import { RejectHospitalDto } from './admin.dto';
+  import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
   
   @Controller('admin')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiTags('Admin')
+  @ApiBearerAuth()
   export class AdminController {
     constructor(private readonly adminService: AdminService) {}
   

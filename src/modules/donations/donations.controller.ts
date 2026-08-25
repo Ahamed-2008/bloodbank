@@ -14,11 +14,14 @@ import {
   import { JwtAuthGuard } from '../auth/jwt-auth.guard';
   import { RolesGuard } from '../../common/guards/roles.guard';
   import { Roles } from '../../common/decorators/roles.decorator';
+  import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
   import { AcceptAlertDto } from './donations.dto';
   
   @Controller('donations')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('donor')
+  @ApiTags('Donations')
+  @ApiBearerAuth()
   export class DonationsController {
     constructor(private readonly donationsService: DonationsService) {}
   

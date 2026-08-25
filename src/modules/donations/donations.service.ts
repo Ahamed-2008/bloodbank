@@ -182,6 +182,12 @@ import {
       );
 
       if (incrementAcceptedCountError) {
+        console.error('Increment accepted count RPC failed:', {
+          code: incrementAcceptedCountError.code,
+          message: incrementAcceptedCountError.message,
+          details: incrementAcceptedCountError.details,
+          hint: incrementAcceptedCountError.hint,
+        });
         throw new BadRequestException('Failed to update alert accepted count.');
       }
   

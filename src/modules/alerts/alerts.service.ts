@@ -90,6 +90,7 @@ import {
           expires_at: this.getExpiryTime(dto.urgency),
         })
         .select()
+        .gt('expires_at', new Date().toISOString())
         .single();
   
       if (error || !alert) {
@@ -206,6 +207,7 @@ import {
           created_at
         `)
         .eq('hospital_id', hospitalId)
+        .or(`status.neq.Active,expires_at.gt.${new Date().toISOString()}`)
         .order('created_at', { ascending: false });
   
       if (error) throw new BadRequestException('Failed to fetch alerts.');
@@ -287,84 +289,25 @@ import {
         throw new BadRequestException('This donation has already been confirmed.');
       }
   
-      const now = new Date();
-  
-      // Confirm the donation
-      await this.supabase
-        .from('donation_responses')
-        .update({
-          status: 'Donated',
-          confirmed_at: now,
-          points_awarded: 100,
-          score_delta: 10,
-        })
-        .eq('response_id', responseId);
-  
-      // Update donor eligibility — 90 day lock
-      const eligibleFrom = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
-  
-      await this.supabase
-        .from('users')
-        .update({
-          last_donated_at: now,
-          eligible_from: eligibleFrom,
-          is_eligible: false,
-          updated_at: now,
-        })
-        .eq('user_id', response.user_id);
-
-      const { error: incrementPointsError } = await this.supabase.rpc(
-        'increment_points',
-        {
+      const { data: confirmation, error: confirmationError } =
+        await this.supabase.rpc('confirm_donation', {
+          p_alert_id: alertId,
+          p_response_id: responseId,
           p_user_id: response.user_id,
-          p_points: 100,
-        },
-      );
-
-      if (incrementPointsError) {
-        throw new BadRequestException('Failed to update donor reward points.');
-      }
-  
-      // Update donor score
-      const { error: incrementDonorScoreError } = await this.supabase.rpc(
-        'increment_donor_score',
-        {
-        p_user_id: response.user_id,
-        p_delta: 10,
-        },
-      );
-
-      if (incrementDonorScoreError) {
-        throw new BadRequestException('Failed to update donor score.');
-      }
-  
-      // Log score event
-      await this.supabase
-        .from('score_events')
-        .insert({
-          user_id: response.user_id,
-          response_id: responseId,
-          event_type: 'Donated',
-          points_delta: 100,
-          score_delta: 10,
-          score_after: 0,   // updated by DB function
-          points_after: 0,  // updated by DB function
-          reason: 'Donation confirmed by hospital',
         });
-  
-      // Update units fulfilled on alert
-      const newFulfilled = alert.units_fulfilled + 1;
-      const alertStatus =
-        newFulfilled >= alert.units_needed ? 'Fulfilled' : 'Active';
-  
-      await this.supabase
-        .from('alerts')
-        .update({
-          units_fulfilled: newFulfilled,
-          status: alertStatus,
-          fulfilled_at: alertStatus === 'Fulfilled' ? now : null,
-        })
-        .eq('alert_id', alertId);
+
+      if (confirmationError || !confirmation?.[0]) {
+        console.error('Donation confirmation RPC failed:', {
+          code: confirmationError?.code,
+          message: confirmationError?.message,
+          details: confirmationError?.details,
+          hint: confirmationError?.hint,
+        });
+        throw new BadRequestException('Failed to confirm donation.');
+      }
+
+      const { donor_locked_until: eligibleFrom, alert_status: alertStatus } =
+        confirmation[0];
   
       return {
         message: 'Donation confirmed successfully.',

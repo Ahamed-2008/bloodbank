@@ -45,7 +45,8 @@ import {
         this.supabase
           .from('alerts')
           .select('*', { count: 'exact', head: true })
-          .eq('status', 'Active'),
+          .eq('status', 'Active')
+          .gt('expires_at', new Date().toISOString()),
         this.supabase
           .from('donation_responses')
           .select('*', { count: 'exact', head: true })
@@ -297,6 +298,7 @@ import {
           )
         `)
         .eq('status', 'Active')
+        .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false });
   
       if (error) throw new BadRequestException('Failed to fetch alerts.');

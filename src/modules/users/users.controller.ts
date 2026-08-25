@@ -10,6 +10,7 @@ import {
   } from '@nestjs/common';
   import { UsersService } from './users.service';
   import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+  import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
   import {
     CompleteProfileDto,
     UpdateLocationDto,
@@ -18,6 +19,8 @@ import {
   
   @Controller('users')
   @UseGuards(JwtAuthGuard)  // All routes in this controller require JWT
+  @ApiTags('Users')
+  @ApiBearerAuth()
   export class UsersController {
     constructor(private readonly usersService: UsersService) {}
   

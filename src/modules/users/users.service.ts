@@ -115,14 +115,20 @@ import {
             p_user_id: userId,
             p_latitude: dto.latitude,
             p_longitude: dto.longitude,
-            p_pincode: dto.pincode,
-            p_city: dto.city,
-            p_state: dto.state,
+            p_pincode: dto.pincode ?? null,
+            p_city: dto.city ?? null,
+            p_state: dto.state ?? null,
             p_is_primary: true,
           },
         );
 
         if (updateLocationError) {
+          console.error('Failed to update location:', {
+            code: updateLocationError.code,
+            message: updateLocationError.message,
+            details: updateLocationError.details,
+            hint: updateLocationError.hint,
+          });
           throw new BadRequestException('Failed to update location.');
         }
       } else {
@@ -132,14 +138,20 @@ import {
             p_user_id: userId,
             p_latitude: dto.latitude,
             p_longitude: dto.longitude,
-            p_pincode: dto.pincode,
-            p_city: dto.city,
-            p_state: dto.state,
+            p_pincode: dto.pincode ?? null,
+            p_city: dto.city ?? null,
+            p_state: dto.state ?? null,
             p_is_primary: true,
           },
         );
 
         if (saveLocationError) {
+          console.error('Failed to save location:', {
+            code: saveLocationError.code,
+            message: saveLocationError.message,
+            details: saveLocationError.details,
+            hint: saveLocationError.hint,
+          });
           throw new BadRequestException('Failed to save location.');
         }
       }

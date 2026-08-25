@@ -1,0 +1,317 @@
+CREATE TABLE users (
+  user_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone                VARCHAR(15) NOT NULL UNIQUE,
+  name                 VARCHAR(100) NOT NULL,
+  blood_group          blood_group_enum NOT NULL,
+  date_of_birth        DATE NOT NULL,
+  gender               gender_enum NOT NULL,
+
+  -- Eligibility
+  is_eligible          BOOLEAN NOT NULL DEFAULT false,
+  last_donated_at      TIMESTAMP,
+  eligible_from        TIMESTAMP,
+
+  -- Donor Score
+  donor_score          INTEGER NOT NULL DEFAULT 0,
+  tier                 donor_tier_enum NOT NULL DEFAULT 'Registered',
+  reward_points        INTEGER NOT NULL DEFAULT 0,
+
+  -- Verification flags (actual docs stored separately)
+  aadhaar_verified     BOOLEAN NOT NULL DEFAULT false,
+  health_verified      BOOLEAN NOT NULL DEFAULT false,
+
+  -- Notification preferences
+  notifications_enabled BOOLEAN NOT NULL DEFAULT true,
+  max_alert_radius_km   INTEGER NOT NULL DEFAULT 10,
+
+  -- Soft delete
+  deleted_at           TIMESTAMP,
+  created_at           TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE user_verifications (
+  verification_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              UUID NOT NULL REFERENCES users(user_id),
+
+  -- Aadhaar verification
+  aadhaar_ref_id       VARCHAR(100),      -- DigiLocker transaction ref only
+  aadhaar_verified_at  TIMESTAMP,
+
+  -- Health document verification
+  health_doc_ref_id    VARCHAR(100),      -- DigiLocker transaction ref only
+  health_doc_type      VARCHAR(50),       -- e.g. "ABHA Health Record"
+  health_verified_at   TIMESTAMP,
+
+  -- Blood group from official document
+  verified_blood_group blood_group_enum,  -- may differ from self-reported
+
+  created_at           TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE user_locations (
+  location_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              UUID NOT NULL REFERENCES users(user_id),
+
+  -- PostGIS geometry point for radius queries
+  coordinates          GEOGRAPHY(POINT, 4326) NOT NULL,
+
+  -- Human readable fallback
+  pincode              VARCHAR(10),
+  city                 VARCHAR(100),
+  state                VARCHAR(100),
+
+  is_primary           BOOLEAN NOT NULL DEFAULT true,
+  updated_at           TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- Index for fast geospatial queries
+CREATE INDEX idx_user_locations_coordinates
+  ON user_locations USING GIST(coordinates);
+
+CREATE TABLE hospitals (
+  hospital_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                 VARCHAR(200) NOT NULL,
+  registration_number  VARCHAR(100) NOT NULL UNIQUE,
+  hospital_type        hospital_type_enum NOT NULL,  -- Government, Private, Trust
+
+  -- Contact
+  contact_name         VARCHAR(100) NOT NULL,
+  contact_phone        VARCHAR(15) NOT NULL,
+  contact_email        VARCHAR(150) NOT NULL UNIQUE,
+
+  -- Location
+  coordinates          GEOGRAPHY(POINT, 4326) NOT NULL,
+  address              TEXT NOT NULL,
+  pincode              VARCHAR(10) NOT NULL,
+  city                 VARCHAR(100) NOT NULL,
+  state                VARCHAR(100) NOT NULL,
+
+  -- Status
+  is_verified          BOOLEAN NOT NULL DEFAULT false,
+  is_active            BOOLEAN NOT NULL DEFAULT true,
+
+  -- Soft delete
+  deleted_at           TIMESTAMP,
+  created_at           TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE hospital_verifications (
+  verification_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  hospital_id          UUID NOT NULL REFERENCES hospitals(hospital_id),
+
+  -- License details
+  license_number       VARCHAR(100) NOT NULL,
+  license_doc_url      TEXT NOT NULL,        -- S3 private URL
+  license_issued_at    DATE NOT NULL,
+  license_expires_at   DATE NOT NULL,
+
+  -- Verification status
+  verified_by          UUID REFERENCES admins(admin_id),
+  verified_at          TIMESTAMP,
+  rejection_reason     TEXT,
+  status               verification_status_enum NOT NULL DEFAULT 'Pending',
+  -- Pending, Approved, Rejected, Expired
+
+  created_at           TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE hospital_staff (
+  staff_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  hospital_id          UUID NOT NULL REFERENCES hospitals(hospital_id),
+  name                 VARCHAR(100) NOT NULL,
+  phone                VARCHAR(15) NOT NULL UNIQUE,
+  email                VARCHAR(150) UNIQUE,
+  role                 staff_role_enum NOT NULL,  -- Admin, Operator
+  is_active            BOOLEAN NOT NULL DEFAULT true,
+
+  created_at           TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE alerts (
+  alert_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  hospital_id          UUID NOT NULL REFERENCES hospitals(hospital_id),
+  created_by           UUID NOT NULL REFERENCES hospital_staff(staff_id),
+
+  -- Blood requirement
+  blood_group          blood_group_enum NOT NULL,
+  units_needed         INTEGER NOT NULL DEFAULT 1,
+  units_fulfilled      INTEGER NOT NULL DEFAULT 0,
+
+  -- Urgency
+  urgency              urgency_enum NOT NULL,  -- Critical, High, Normal
+  patient_condition    TEXT,                   -- Optional context for donors
+
+  -- Targeting
+  radius_km            INTEGER NOT NULL DEFAULT 10,
+  auto_expand_radius   BOOLEAN NOT NULL DEFAULT true,
+
+  -- Status
+  status               alert_status_enum NOT NULL DEFAULT 'Active',
+  -- Active, Fulfilled, Expired, Cancelled
+
+  -- Timing
+  expires_at           TIMESTAMP NOT NULL,
+  fulfilled_at         TIMESTAMP,
+  cancelled_at         TIMESTAMP,
+  cancellation_reason  TEXT,
+
+  -- Stats
+  notified_count       INTEGER NOT NULL DEFAULT 0,
+  accepted_count       INTEGER NOT NULL DEFAULT 0,
+
+  created_at           TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- Index for active alert queries
+CREATE INDEX idx_alerts_status_blood_group
+  ON alerts(status, blood_group)
+  WHERE status = 'Active';
+
+CREATE TABLE alert_notifications (
+  notification_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  alert_id             UUID NOT NULL REFERENCES alerts(alert_id),
+  user_id              UUID NOT NULL REFERENCES users(user_id),
+
+  sent_at              TIMESTAMP NOT NULL DEFAULT now(),
+  delivery_status      delivery_status_enum NOT NULL DEFAULT 'Sent',
+  -- Sent, Delivered, Opened, Declined, Accepted, Expired
+
+  opened_at            TIMESTAMP,
+  responded_at         TIMESTAMP,
+  response             response_enum,  -- Accepted, Declined, NoResponse
+
+  UNIQUE(alert_id, user_id)  -- One notification per donor per alert
+);
+
+CREATE TABLE donation_responses (
+  response_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  alert_id             UUID NOT NULL REFERENCES alerts(alert_id),
+  user_id              UUID NOT NULL REFERENCES users(user_id),
+  hospital_id          UUID NOT NULL REFERENCES hospitals(hospital_id),
+
+  -- Timeline
+  accepted_at          TIMESTAMP NOT NULL DEFAULT now(),
+  eta_minutes          INTEGER,               -- Donor's self-reported ETA
+  arrived_at           TIMESTAMP,
+  confirmed_at         TIMESTAMP,
+
+  -- Outcome
+  status               response_status_enum NOT NULL DEFAULT 'Accepted',
+  -- Accepted, Arrived, Donated, NoShow, Cancelled
+
+  -- Points
+  points_awarded       INTEGER,
+  score_delta          INTEGER,
+
+  -- Hospital notes
+  hospital_notes       TEXT,
+
+  UNIQUE(alert_id, user_id)  -- One response per donor per alert
+);
+
+CREATE TABLE score_events (
+  event_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              UUID NOT NULL REFERENCES users(user_id),
+  response_id          UUID REFERENCES donation_responses(response_id),
+
+  event_type           score_event_enum NOT NULL,
+  -- Donated, NoShow, AcceptedAndCancelled, StreakBonus, PenaltyReversed
+
+  points_delta         INTEGER NOT NULL,   -- positive or negative
+  score_delta          INTEGER NOT NULL,   -- positive or negative
+  score_after          INTEGER NOT NULL,   -- snapshot of score after event
+  points_after         INTEGER NOT NULL,
+
+  reason               TEXT,
+  created_at           TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE admins (
+  admin_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                 VARCHAR(100) NOT NULL,
+  email                VARCHAR(150) NOT NULL UNIQUE,
+  phone                VARCHAR(15) NOT NULL UNIQUE,
+  role                 admin_role_enum NOT NULL,  -- SuperAdmin, Moderator
+  is_active            BOOLEAN NOT NULL DEFAULT true,
+
+  created_at           TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TYPE blood_group_enum AS ENUM
+  ('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-');
+
+CREATE TYPE gender_enum AS ENUM
+  ('Male', 'Female', 'Other');
+
+CREATE TYPE donor_tier_enum AS ENUM
+  ('Registered', 'ActiveDonor', 'TrustedDonor', 'CommunityHero', 'Lifesaver');
+
+CREATE TYPE hospital_type_enum AS ENUM
+  ('Government', 'Private', 'Trust', 'Clinic');
+
+CREATE TYPE verification_status_enum AS ENUM
+  ('Pending', 'Approved', 'Rejected', 'Expired');
+
+CREATE TYPE urgency_enum AS ENUM
+  ('Critical', 'High', 'Normal');
+
+CREATE TYPE alert_status_enum AS ENUM
+  ('Active', 'Fulfilled', 'Expired', 'Cancelled');
+
+CREATE TYPE response_status_enum AS ENUM
+  ('Accepted', 'Arrived', 'Donated', 'NoShow', 'Cancelled');
+
+CREATE TYPE delivery_status_enum AS ENUM
+  ('Sent', 'Delivered', 'Opened', 'Declined', 'Accepted', 'Expired');
+
+CREATE TYPE score_event_enum AS ENUM
+  ('Donated', 'NoShow', 'AcceptedAndCancelled', 'StreakBonus', 'PenaltyReversed');
+
+CREATE TYPE staff_role_enum AS ENUM
+  ('Admin', 'Operator');
+
+CREATE TYPE admin_role_enum AS ENUM
+  ('SuperAdmin', 'Moderator');
+
+
+users ──────────────── user_verifications     (1:1)
+users ──────────────── user_locations         (1:many)
+users ──────────────── alert_notifications    (1:many)
+users ──────────────── donation_responses     (1:many)
+users ──────────────── score_events           (1:many)
+
+hospitals ──────────── hospital_verifications (1:1)
+hospitals ──────────── hospital_staff         (1:many)
+hospitals ──────────── alerts                 (1:many)
+
+alerts ─────────────── alert_notifications    (1:many)
+alerts ─────────────── donation_responses     (1:many)
+
+donation_responses ──── score_events          (1:1)
+
+admins ─────────────── hospital_verifications (admin verifies hospital)
+
+Schema Overview
+users
+  ├── user_verification (1:1)
+  ├── user_locations (1:many)
+  ├── donation_responses (1:many)
+  └── score_events (1:many)
+
+hospitals
+  ├── hospital_verification (1:1)
+  └── alerts (1:many)
+
+alerts
+  ├── donation_responses (1:many)
+  └── alert_notifications (1:many)
+
+donation_responses
+  └── score_events (1:1)
