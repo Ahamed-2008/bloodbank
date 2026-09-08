@@ -5,7 +5,7 @@ import {
   } from '@nestjs/common';
   import { ConfigService } from '@nestjs/config';
   import { createClient, SupabaseClient } from '@supabase/supabase-js';
-  import { RejectHospitalDto } from './admin.dto';
+  import { RejectHospitalDto, VerificationStatus } from './admin.dto';
   
   @Injectable()
   export class AdminService {
@@ -63,7 +63,7 @@ import {
     }
   
     // ─── List Hospitals by Status ───────────────────────────────────
-    async getHospitals(status: 'Pending' | 'Approved' | 'Rejected' | 'all') {
+    async getHospitals(status?: VerificationStatus) {
       let query = this.supabase
         .from('hospitals')
         .select(`
@@ -93,7 +93,7 @@ import {
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
   
-      if (status !== 'all') {
+      if (status) {
         query = query.eq('hospital_verifications.status', status);
       }
   

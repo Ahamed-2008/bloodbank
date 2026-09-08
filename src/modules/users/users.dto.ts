@@ -1,9 +1,11 @@
-import {
+import { Transform } from 'class-transformer';
+  import {
     IsString,
     IsEnum,
     IsDateString,
     IsNumber,
     IsBoolean,
+    IsNotEmpty,
     IsOptional,
     Min,
     Max,
@@ -30,7 +32,9 @@ import {
   }
   
   export class CompleteProfileDto {
+    @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
     @IsString()
+    @IsNotEmpty()
     @Length(2, 100)
     name: string;
   
@@ -51,10 +55,10 @@ import {
     @IsLongitude()
     longitude: number;
   
-    @IsOptional()
     @IsString()
+    @IsNotEmpty()
     @Length(6, 6)
-    pincode?: string;
+    pincode: string;
   
     @IsOptional()
     @IsString()

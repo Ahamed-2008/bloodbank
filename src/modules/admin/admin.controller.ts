@@ -14,8 +14,12 @@ import {
   import { JwtAuthGuard } from '../auth/jwt-auth.guard';
   import { RolesGuard } from '../../common/guards/roles.guard';
   import { Roles } from '../../common/decorators/roles.decorator';
-  import { RejectHospitalDto } from './admin.dto';
-  import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+  import {
+    ListHospitalsQueryDto,
+    RejectHospitalDto,
+    VerificationStatus,
+  } from './admin.dto';
+  import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
   
   @Controller('admin')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -31,8 +35,9 @@ import {
     }
   
     @Get('hospitals')
-    getHospitals(@Query('status') status: 'Pending' | 'Approved' | 'Rejected' | 'all' = 'all') {
-      return this.adminService.getHospitals(status);
+    @ApiQuery({ name: 'status', required: false, enum: VerificationStatus })
+    getHospitals(@Query() query: ListHospitalsQueryDto) {
+      return this.adminService.getHospitals(query.status);
     }
   
     @Get('hospitals/:id')
