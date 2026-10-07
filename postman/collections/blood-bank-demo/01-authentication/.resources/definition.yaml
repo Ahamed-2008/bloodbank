@@ -1,0 +1,4 @@
+$kind: collection
+name: '01 Authentication'
+description: Exchange Firebase ID tokens for backend JWTs. Run these first.
+order: 1000

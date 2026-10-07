@@ -1,0 +1,16 @@
+$kind: http-request
+name: '23 Donor Accesses Admin Endpoint'
+method: GET
+url: '{{base_url}}/admin/dashboard'
+order: 1000
+headers:
+  - key: Authorization
+    value: 'Bearer {{donor_a_jwt}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Donor JWT must be rejected on admin-only endpoint
+      pm.test("Returns 403 for donor accessing admin endpoint", function () {
+          pm.response.to.have.status(403);
+      });

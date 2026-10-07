@@ -1,0 +1,19 @@
+$kind: http-request
+name: '13 Admin - List Pending Hospitals'
+method: GET
+url: '{{base_url}}/admin/hospitals?status=Pending'
+order: 2000
+headers:
+  - key: Authorization
+    value: 'Bearer {{admin_jwt}}'
+queryParams:
+  - key: status
+    value: Pending
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Admin should see the newly registered hospital in the pending list
+      pm.test("Returns 200 with pending hospitals list", function () {
+          pm.response.to.have.status(200);
+      });

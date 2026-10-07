@@ -1,0 +1,27 @@
+$kind: http-request
+name: '05 Complete Profile - Donor A'
+method: PUT
+url: '{{base_url}}/users/profile'
+order: 1000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{donor_a_jwt}}'
+body:
+  type: json
+  content: |-
+    {
+      "name": "Arjun Krishnamurthy",
+      "blood_group": "O+",
+      "date_of_birth": "1995-06-15",
+      "gender": "Male"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Verify profile update succeeded
+      pm.test("Returns 200 for Donor A profile update", function () {
+          pm.response.to.have.status(200);
+      });

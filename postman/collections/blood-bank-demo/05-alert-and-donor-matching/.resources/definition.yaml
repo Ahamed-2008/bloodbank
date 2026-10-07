@@ -1,0 +1,4 @@
+$kind: collection
+name: '05 Alert and Donor Matching'
+description: Hospital staff creates a blood alert; donors see it in their active alerts.
+order: 5000

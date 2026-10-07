@@ -1,0 +1,38 @@
+name: demo
+values:
+  - key: base_url
+    value: 'http://localhost:3000'
+    enabled: true
+  - key: firebase_token_donor_a
+    value: ''
+    enabled: true
+  - key: firebase_token_donor_b
+    value: ''
+    enabled: true
+  - key: firebase_token_hospital
+    value: ''
+    enabled: true
+  - key: firebase_token_admin
+    value: ''
+    enabled: true
+  - key: donor_a_jwt
+    value: ''
+    enabled: true
+  - key: donor_b_jwt
+    value: ''
+    enabled: true
+  - key: hospital_jwt
+    value: ''
+    enabled: true
+  - key: admin_jwt
+    value: ''
+    enabled: true
+  - key: hospital_id
+    value: ''
+    enabled: true
+  - key: alert_id
+    value: ''
+    enabled: true
+  - key: donation_id
+    value: ''
+    enabled: true

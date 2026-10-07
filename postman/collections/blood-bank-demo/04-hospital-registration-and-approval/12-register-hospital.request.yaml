@@ -1,0 +1,38 @@
+$kind: http-request
+name: '12 Register Hospital'
+method: POST
+url: '{{base_url}}/hospitals/register'
+order: 1000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "name": "Vellore Blood Care Hospital",
+      "registration_number": "TN-HOSP-2024-001",
+      "hospital_type": "Private",
+      "contact_name": "Dr. Ramesh Iyer",
+      "contact_phone": "+919876543210",
+      "contact_email": "admin@vellorebch.in",
+      "latitude": 12.9750,
+      "longitude": 79.1600,
+      "address": "12 Anna Salai, Vellore",
+      "pincode": "632001",
+      "city": "Vellore",
+      "state": "Tamil Nadu",
+      "license_number": "TN-MED-LIC-2024-001",
+      "license_issued_at": "2024-01-01",
+      "license_expires_at": "2027-01-01"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Save hospital_id from the registration response
+      pm.test("Returns 201 and saves hospital_id", function () {
+          pm.response.to.have.status(201);
+          const json = pm.response.json();
+          pm.environment.set("hospital_id", json.id);
+      });

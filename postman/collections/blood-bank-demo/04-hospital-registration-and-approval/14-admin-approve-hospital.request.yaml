@@ -1,0 +1,16 @@
+$kind: http-request
+name: '14 Admin - Approve Hospital'
+method: PUT
+url: '{{base_url}}/admin/hospitals/{{hospital_id}}/approve'
+order: 3000
+headers:
+  - key: Authorization
+    value: 'Bearer {{admin_jwt}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Hospital must be approved before staff can create alerts
+      pm.test("Returns 200 for hospital approval", function () {
+          pm.response.to.have.status(200);
+      });

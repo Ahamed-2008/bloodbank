@@ -1,0 +1,16 @@
+$kind: http-request
+name: '19 Hospital - Get Alert Responses'
+method: GET
+url: '{{base_url}}/alerts/{{alert_id}}/responses'
+order: 2000
+headers:
+  - key: Authorization
+    value: 'Bearer {{hospital_jwt}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Hospital sees Donor A's acceptance in the responses list
+      pm.test("Returns 200 with alert responses", function () {
+          pm.response.to.have.status(200);
+      });

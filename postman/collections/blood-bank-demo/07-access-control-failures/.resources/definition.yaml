@@ -1,0 +1,4 @@
+$kind: collection
+name: '07 Access Control Failures'
+description: Verify that role-based guards return 403 for unauthorized access.
+order: 7000

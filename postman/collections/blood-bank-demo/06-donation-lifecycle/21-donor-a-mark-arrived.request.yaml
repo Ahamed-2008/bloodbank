@@ -1,0 +1,16 @@
+$kind: http-request
+name: '21 Donor A - Mark Arrived'
+method: PUT
+url: '{{base_url}}/donations/{{alert_id}}/arrived'
+order: 4000
+headers:
+  - key: Authorization
+    value: 'Bearer {{donor_a_jwt}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Donor marks physical arrival at the hospital
+      pm.test("Returns 200 for donor arrival", function () {
+          pm.response.to.have.status(200);
+      });

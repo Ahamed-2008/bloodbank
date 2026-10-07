@@ -1,0 +1,28 @@
+$kind: http-request
+name: '11 Invalid Location - Null Pincode'
+method: PUT
+url: '{{base_url}}/users/location'
+order: 2000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{donor_a_jwt}}'
+body:
+  type: json
+  content: |-
+    {
+      "latitude": 12.9716,
+      "longitude": 79.1587,
+      "pincode": null,
+      "city": "Vellore",
+      "state": "Tamil Nadu"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Null pincode must be rejected (IsString + IsNotEmpty)
+      pm.test("Returns 400 for null pincode", function () {
+          pm.response.to.have.status(400);
+      });

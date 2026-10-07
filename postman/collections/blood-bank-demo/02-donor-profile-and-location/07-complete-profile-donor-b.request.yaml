@@ -1,0 +1,27 @@
+$kind: http-request
+name: '07 Complete Profile - Donor B'
+method: PUT
+url: '{{base_url}}/users/profile'
+order: 3000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{donor_b_jwt}}'
+body:
+  type: json
+  content: |-
+    {
+      "name": "Priya Subramaniam",
+      "blood_group": "O+",
+      "date_of_birth": "1998-03-22",
+      "gender": "Female"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Verify profile update succeeded for Donor B
+      pm.test("Returns 200 for Donor B profile update", function () {
+          pm.response.to.have.status(200);
+      });

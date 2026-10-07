@@ -1,0 +1,24 @@
+$kind: http-request
+name: '04 Sign In - Admin'
+method: POST
+url: '{{base_url}}/auth/sign-in'
+order: 4000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "idToken": "{{firebase_token_admin}}"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Verify sign-in succeeded and save admin JWT
+      pm.test("Returns 200 and saves admin_jwt", function () {
+          pm.response.to.have.status(200);
+          const json = pm.response.json();
+          pm.environment.set("admin_jwt", json.access_token);
+      });

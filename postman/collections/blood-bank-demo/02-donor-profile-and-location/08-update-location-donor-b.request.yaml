@@ -1,0 +1,28 @@
+$kind: http-request
+name: '08 Update Location - Donor B'
+method: PUT
+url: '{{base_url}}/users/location'
+order: 4000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{donor_b_jwt}}'
+body:
+  type: json
+  content: |-
+    {
+      "latitude": 13.4200,
+      "longitude": 79.1000,
+      "pincode": "631501",
+      "city": "Ranipet",
+      "state": "Tamil Nadu"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Donor B is ~50 km from the hospital — verifies geo-matching radius logic
+      pm.test("Returns 200 for Donor B location update", function () {
+          pm.response.to.have.status(200);
+      });
