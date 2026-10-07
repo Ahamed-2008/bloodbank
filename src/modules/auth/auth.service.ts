@@ -1,8 +1,15 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  UnauthorizedException,
+  NotFoundException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as admin from 'firebase-admin';
+import { DEMO_ACCOUNTS } from './demo-accounts';
 
 @Injectable()
 export class AuthService {
@@ -50,7 +57,7 @@ export class AuthService {
         throw new UnauthorizedException('Your admin account has been deactivated.');
       }
 
-      const token = this.jwtService.sign({
+      const token = this.issueAppJwt({
         sub: adminRow.admin_id,
         phone,
         role: 'admin',
@@ -72,7 +79,7 @@ export class AuthService {
         throw new UnauthorizedException('Your staff account has been deactivated.');
       }
 
-      const token = this.jwtService.sign({
+      const token = this.issueAppJwt({
         sub: staffMember.staff_id,
         phone,
         role: 'hospital_staff',
@@ -118,12 +125,96 @@ export class AuthService {
       userId = existingUser.user_id;
     }
 
-    const token = this.jwtService.sign({
+    const token = this.issueAppJwt({
       sub: userId,
       phone,
       role: 'donor',
     });
 
     return { token, isNewUser, role: 'donor' };
+  }
+
+  async signInWithDemoCredentials(phone: string, otp: string) {
+    if (this.configService.get<string>('DEMO_AUTH_ENABLED') !== 'true') {
+      throw new NotFoundException();
+    }
+
+    const demoAccount = DEMO_ACCOUNTS.find((account) => account.phone === phone);
+    if (!demoAccount || demoAccount.otp !== otp) {
+      throw new UnauthorizedException('Invalid demo credentials.');
+    }
+
+    const notSeeded = () =>
+      new InternalServerErrorException(
+        'Demo user not seeded. Run the demo seed script.',
+      );
+
+    if (demoAccount.role === 'donor') {
+      const { data: user } = await this.supabase
+        .from('users')
+        .select('user_id')
+        .eq('phone', phone)
+        .is('deleted_at', null)
+        .single();
+
+      if (!user) throw notSeeded();
+
+      return {
+        token: this.issueAppJwt({ sub: user.user_id, phone, role: 'donor' }),
+        isNewUser: false,
+        role: 'donor',
+      };
+    }
+
+    if (demoAccount.role === 'hospital_staff') {
+      const { data: staffMember } = await this.supabase
+        .from('hospital_staff')
+        .select('staff_id, hospital_id, role, is_active')
+        .eq('phone', phone)
+        .single();
+
+      if (!staffMember) throw notSeeded();
+      if (!staffMember.is_active) {
+        throw new UnauthorizedException('Invalid demo credentials.');
+      }
+
+      return {
+        token: this.issueAppJwt({
+          sub: staffMember.staff_id,
+          phone,
+          role: 'hospital_staff',
+          hospital_id: staffMember.hospital_id,
+          staff_role: staffMember.role,
+        }),
+        isNewUser: false,
+        role: 'hospital_staff',
+      };
+    }
+
+    const { data: adminRow } = await this.supabase
+      .from('admins')
+      .select('admin_id, role, is_active')
+      .eq('phone', phone)
+      .single();
+
+    if (!adminRow) throw notSeeded();
+    if (!adminRow.is_active) {
+      throw new UnauthorizedException('Invalid demo credentials.');
+    }
+
+    return {
+      token: this.issueAppJwt({
+        sub: adminRow.admin_id,
+        phone,
+        role: 'admin',
+        admin_role: adminRow.role,
+      }),
+      isNewUser: false,
+      role: 'admin',
+    };
+  }
+
+  private issueAppJwt(payload: Record<string, unknown>): string {
+    return this.jwtService.sign(payload);
   }
 }

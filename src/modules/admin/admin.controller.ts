@@ -16,7 +16,9 @@ import {
   import { Roles } from '../../common/decorators/roles.decorator';
   import {
     ListHospitalsQueryDto,
+    ListDonorsQueryDto,
     RejectHospitalDto,
+    RejectDonorDto,
     VerificationStatus,
   } from './admin.dto';
   import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
@@ -62,8 +64,26 @@ import {
     }
   
     @Get('donors')
-    getDonors() {
-      return this.adminService.getDonors();
+    @ApiQuery({ name: 'verified', required: false, enum: ['true', 'false'] })
+    getDonors(@Query() query: ListDonorsQueryDto) {
+      const verified = query.verified === undefined ? undefined : query.verified === 'true';
+      return this.adminService.getDonors(verified);
+    }
+
+    @Put('donors/:id/approve')
+    @HttpCode(HttpStatus.OK)
+    approveDonor(@Request() req, @Param('id') id: string) {
+      return this.adminService.approveDonor(id, req.user.userId);
+    }
+
+    @Put('donors/:id/reject')
+    @HttpCode(HttpStatus.OK)
+    rejectDonor(
+      @Request() req,
+      @Param('id') id: string,
+      @Body() dto: RejectDonorDto,
+    ) {
+      return this.adminService.rejectDonor(id, req.user.userId, dto);
     }
   
     @Get('alerts')

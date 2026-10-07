@@ -5,7 +5,7 @@ import {
   } from '@nestjs/common';
   import { ConfigService } from '@nestjs/config';
   import { createClient, SupabaseClient } from '@supabase/supabase-js';
-  import { CompleteProfileDto, UpdateLocationDto, UpdateNotificationPrefsDto } from './users.dto';
+  import { CompleteProfileDto, UpdateAvailabilityDto, UpdateLocationDto, UpdateNotificationPrefsDto } from './users.dto';
   
   @Injectable()
   export class UsersService {
@@ -66,16 +66,38 @@ import {
         throw new BadRequestException('Donor must be between 18 and 65 years old.');
       }
   
+      const { data: existingUser, error: existingUserError } = await this.supabase
+        .from('users')
+        .select('name, eligible_from')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .single();
+
+      if (existingUserError || !existingUser) {
+        throw new NotFoundException('User not found.');
+      }
+
+      const updateValues: Record<string, unknown> = {
+        name: dto.name,
+        blood_group: dto.blood_group,
+        date_of_birth: dto.date_of_birth,
+        gender: dto.gender,
+        updated_at: new Date(),
+      };
+
+      const eligibleFrom = existingUser.eligible_from
+        ? new Date(existingUser.eligible_from)
+        : null;
+      if (
+        !existingUser.name.trim() &&
+        (!eligibleFrom || eligibleFrom <= new Date())
+      ) {
+        updateValues.is_eligible = true;
+      }
+
       const { data, error } = await this.supabase
         .from('users')
-        .update({
-          name: dto.name,
-          blood_group: dto.blood_group,
-          date_of_birth: dto.date_of_birth,
-          gender: dto.gender,
-          is_eligible: true,       // eligible after profile completion
-          updated_at: new Date(),
-        })
+        .update(updateValues)
         .eq('user_id', userId)
         .is('deleted_at', null)
         .select()
@@ -206,5 +228,17 @@ import {
       if (error) throw new BadRequestException('Failed to update preferences.');
   
       return { message: 'Notification preferences updated successfully.' };
+    }
+
+    async updateAvailability(userId: string, dto: UpdateAvailabilityDto) {
+      const { error } = await this.supabase
+        .from('users')
+        .update({ is_available: dto.is_available, updated_at: new Date() })
+        .eq('user_id', userId)
+        .is('deleted_at', null);
+
+      if (error) throw new BadRequestException('Failed to update availability.');
+
+      return { message: 'Availability updated successfully.' };
     }
   }

@@ -78,3 +78,8 @@ import { Transform } from 'class-transformer';
     @Max(50)
     max_alert_radius_km: number;
   }
+
+  export class UpdateAvailabilityDto {
+    @IsBoolean()
+    is_available: boolean;
+  }

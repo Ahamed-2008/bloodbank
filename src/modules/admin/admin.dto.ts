@@ -1,4 +1,4 @@
-import { IsEnum, IsString, IsOptional, Length } from 'class-validator';
+import { IsEnum, IsString, IsOptional, IsBooleanString, Length } from 'class-validator';
 
 export enum VerificationStatus {
   PENDING = 'Pending',
@@ -22,4 +22,10 @@ export class RejectDonorDto {
   @IsString()
   @Length(10, 500)
   reason: string;
+}
+
+export class ListDonorsQueryDto {
+  @IsOptional()
+  @IsBooleanString()
+  verified?: string;
 }
