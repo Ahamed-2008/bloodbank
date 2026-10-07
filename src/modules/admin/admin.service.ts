@@ -5,7 +5,7 @@ import {
   } from '@nestjs/common';
   import { ConfigService } from '@nestjs/config';
   import { createClient, SupabaseClient } from '@supabase/supabase-js';
-  import { RejectHospitalDto, VerificationStatus } from './admin.dto';
+  import { RejectDonorDto, RejectHospitalDto, VerificationStatus } from './admin.dto';
   
   @Injectable()
   export class AdminService {
@@ -251,8 +251,8 @@ import {
     }
   
     // ─── List All Donors ────────────────────────────────────────────
-    async getDonors() {
-      const { data, error } = await this.supabase
+    async getDonors(verified?: boolean) {
+      let query = this.supabase
         .from('users')
         .select(`
           user_id,
@@ -270,10 +270,60 @@ import {
         `)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
+
+      if (verified !== undefined) {
+        query = query.eq('aadhaar_verified', verified);
+      }
+
+      const { data, error } = await query;
   
       if (error) throw new BadRequestException('Failed to fetch donors.');
   
       return data;
+    }
+
+    async approveDonor(userId: string, adminId: string) {
+      const now = new Date();
+      const { data, error } = await this.supabase
+        .from('users')
+        .update({
+          aadhaar_verified: true,
+          verified_by: adminId,
+          verified_at: now,
+          rejection_reason: null,
+          updated_at: now,
+        })
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .select('user_id')
+        .single();
+
+      if (error) throw new BadRequestException('Failed to approve donor.');
+      if (!data) throw new NotFoundException('Donor not found.');
+
+      return { message: 'Donor approved successfully.' };
+    }
+
+    async rejectDonor(userId: string, adminId: string, dto: RejectDonorDto) {
+      const now = new Date();
+      const { data, error } = await this.supabase
+        .from('users')
+        .update({
+          aadhaar_verified: false,
+          verified_by: adminId,
+          verified_at: now,
+          rejection_reason: dto.reason,
+          updated_at: now,
+        })
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .select('user_id')
+        .single();
+
+      if (error) throw new BadRequestException('Failed to reject donor.');
+      if (!data) throw new NotFoundException('Donor not found.');
+
+      return { message: 'Donor rejected successfully.' };
     }
   
     // ─── List All Active Alerts ─────────────────────────────────────

@@ -6,6 +6,8 @@ import { HospitalsModule } from './modules/hospitals/hospitals.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { DonationsModule } from './modules/donations/donations.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -13,6 +15,7 @@ import { DonationsModule } from './modules/donations/donations.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    ScheduleModule.forRoot(),
     AuthModule,
     UsersModule,
     HospitalsModule,
@@ -20,7 +23,7 @@ import { DonationsModule } from './modules/donations/donations.module';
     AdminModule,
     DonationsModule,
   ],
-  controllers: [],
+  controllers: [HealthController],
   providers: [],
 })
 export class AppModule {}

@@ -10,11 +10,14 @@ import {
   } from '@nestjs/common';
   import { UsersService } from './users.service';
   import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+  import { RolesGuard } from '../../common/guards/roles.guard';
+  import { Roles } from '../../common/decorators/roles.decorator';
   import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
   import {
     CompleteProfileDto,
     UpdateLocationDto,
     UpdateNotificationPrefsDto,
+    UpdateAvailabilityDto,
   } from './users.dto';
   
   @Controller('users')
@@ -53,5 +56,13 @@ import {
       @Body() dto: UpdateNotificationPrefsDto,
     ) {
       return this.usersService.updateNotificationPrefs(req.user.userId, dto);
+    }
+
+    @Put('availability')
+    @UseGuards(RolesGuard)
+    @Roles('donor')
+    @HttpCode(HttpStatus.OK)
+    updateAvailability(@Request() req, @Body() dto: UpdateAvailabilityDto) {
+      return this.usersService.updateAvailability(req.user.userId, dto);
     }
   }

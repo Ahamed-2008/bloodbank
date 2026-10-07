@@ -7,6 +7,7 @@ import {
   import { ConfigService } from '@nestjs/config';
   import { createClient, SupabaseClient } from '@supabase/supabase-js';
   import { CreateAlertDto, CancelAlertDto } from './alerts.dto';
+  import { BLOOD_GROUP_COMPATIBILITY, BloodGroup } from '../../common/constants/blood-group-compatibility';
   
   @Injectable()
   export class AlertsService {
@@ -115,6 +116,8 @@ import {
       bloodGroup: string,
       radiusKm: number,
     ) {
+      const compatibleGroups = BLOOD_GROUP_COMPATIBILITY[bloodGroup as BloodGroup];
+
       // Get hospital coordinates
       const { data: hospital } = await this.supabase
         .rpc('get_hospital_coordinates', { p_hospital_id: hospitalId });
@@ -125,6 +128,9 @@ import {
           p_blood_group: bloodGroup,
           p_hospital_id: hospitalId,
           p_radius_km: radiusKm,
+          p_compatible_groups: compatibleGroups,
+          p_alert_id: alertId,
+          p_limit: 100,
         });
   
       if (!donors || donors.length === 0) {

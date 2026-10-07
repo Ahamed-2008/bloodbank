@@ -7,6 +7,7 @@ import {
   import { ConfigService } from '@nestjs/config';
   import { createClient, SupabaseClient } from '@supabase/supabase-js';
   import { AcceptAlertDto } from './donations.dto';
+  import { BLOOD_GROUP_COMPATIBILITY, BloodGroup, getCompatibleRecipientGroups } from '../../common/constants/blood-group-compatibility';
   
   @Injectable()
   export class DonationsService {
@@ -76,7 +77,8 @@ import {
           )
         `)
         .eq('status', 'Active')
-        .eq('blood_group', donor.blood_group)
+        .gt('expires_at', new Date().toISOString())
+        .in('blood_group', getCompatibleRecipientGroups(donor.blood_group as BloodGroup))
         .order('urgency', { ascending: true })
         .order('created_at', { ascending: true });
   
@@ -97,7 +99,7 @@ import {
       // Verify donor eligibility
       const { data: donor } = await this.supabase
         .from('users')
-        .select('user_id, blood_group, is_eligible, aadhaar_verified')
+        .select('user_id, blood_group, is_eligible, eligible_from, aadhaar_verified')
         .eq('user_id', userId)
         .is('deleted_at', null)
         .single();
@@ -110,20 +112,25 @@ import {
         );
       }
   
-      if (!donor.is_eligible) {
+      const eligibleFrom = donor.eligible_from ? new Date(donor.eligible_from) : null;
+      if (!donor.is_eligible || (eligibleFrom && eligibleFrom > new Date())) {
         throw new ForbiddenException(
-          'You are not eligible to donate at this time.',
+          `You are not eligible to donate at this time. Eligible from: ${donor.eligible_from ?? 'not set'}.`,
         );
       }
   
       // Verify alert is still active
       const { data: alert } = await this.supabase
         .from('alerts')
-        .select('alert_id, blood_group, status, units_needed, units_fulfilled, hospital_id, expires_at')
+        .select('alert_id, blood_group, status, units_needed, units_fulfilled, hospital_id, expires_at, hospitals(name, address)')
         .eq('alert_id', alertId)
         .single();
   
       if (!alert) throw new NotFoundException('Alert not found.');
+
+      const linkedHospital = Array.isArray(alert.hospitals)
+        ? alert.hospitals[0]
+        : alert.hospitals;
   
       if (alert.status !== 'Active') {
         throw new BadRequestException(
@@ -135,7 +142,9 @@ import {
         throw new BadRequestException('This alert has expired.');
       }
   
-      if (alert.blood_group !== donor.blood_group) {
+      const compatibleDonorGroups: readonly BloodGroup[] =
+        BLOOD_GROUP_COMPATIBILITY[alert.blood_group as BloodGroup];
+      if (!compatibleDonorGroups.includes(donor.blood_group as BloodGroup)) {
         throw new ForbiddenException(
           'Your blood group does not match this alert.',
         );
@@ -206,7 +215,8 @@ import {
         message: 'Alert accepted successfully. Please proceed to the hospital.',
         response_id: response.response_id,
         hospital: {
-          name: null,   // fetched separately below
+          name: linkedHospital?.name ?? null,
+          address: linkedHospital?.address ?? null,
         },
         eta_minutes: dto.eta_minutes,
       };
