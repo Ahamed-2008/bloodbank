@@ -1,0 +1,4 @@
+$kind: collection
+name: '03 Validation Failures'
+description: Demonstrate that the API rejects invalid input with 400 Bad Request.
+order: 3000

@@ -1,0 +1,8 @@
+$kind: collection
+name: Blood Bank Demo
+description: |-
+  Live demo collection for the Blood Donation Matching API.
+  NestJS + Supabase (PostGIS) + Firebase Phone Auth.
+
+  Run folders in order with the Collection Runner using the "demo" environment.
+  Fill firebase_token_* variables with real Firebase ID tokens before running.

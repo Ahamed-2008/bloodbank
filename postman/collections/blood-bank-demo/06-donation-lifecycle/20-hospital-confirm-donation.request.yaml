@@ -1,0 +1,16 @@
+$kind: http-request
+name: '20 Hospital - Confirm Donation'
+method: PUT
+url: '{{base_url}}/alerts/{{alert_id}}/confirm/{{donation_id}}'
+order: 3000
+headers:
+  - key: Authorization
+    value: 'Bearer {{hospital_jwt}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Hospital confirms the donor's response
+      pm.test("Returns 200 for donation confirmation", function () {
+          pm.response.to.have.status(200);
+      });

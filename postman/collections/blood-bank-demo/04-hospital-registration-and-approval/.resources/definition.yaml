@@ -1,0 +1,4 @@
+$kind: collection
+name: '04 Hospital Registration and Approval'
+description: Register a hospital (public endpoint) then approve it via admin.
+order: 4000

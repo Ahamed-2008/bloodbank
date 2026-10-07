@@ -1,0 +1,33 @@
+$kind: http-request
+name: '15 Create Blood Alert'
+method: POST
+url: '{{base_url}}/alerts'
+order: 1000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{hospital_jwt}}'
+body:
+  type: json
+  content: |-
+    {
+      "blood_group": "O+",
+      "units_needed": 2,
+      "urgency": "Critical",
+      "department": "Emergency",
+      "patient_ref": "PT-DEMO-001",
+      "patient_condition": "Post-operative blood loss",
+      "auto_expand_radius": true,
+      "radius_km": 10
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Save alert_id for use in later requests
+      pm.test("Returns 201 and saves alert_id", function () {
+          pm.response.to.have.status(201);
+          const json = pm.response.json();
+          pm.environment.set("alert_id", json.id);
+      });

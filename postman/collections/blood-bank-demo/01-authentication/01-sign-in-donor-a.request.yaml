@@ -1,0 +1,24 @@
+$kind: http-request
+name: '01 Sign In - Donor A'
+method: POST
+url: '{{base_url}}/auth/sign-in'
+order: 1000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "idToken": "{{firebase_token_donor_a}}"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Verify sign-in succeeded and save Donor A's JWT
+      pm.test("Returns 200 and saves donor_a_jwt", function () {
+          pm.response.to.have.status(200);
+          const json = pm.response.json();
+          pm.environment.set("donor_a_jwt", json.access_token);
+      });

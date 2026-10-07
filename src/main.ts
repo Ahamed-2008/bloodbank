@@ -3,8 +3,10 @@ import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-const packageJson = require('../package.json');
+const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as { version: string };
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);

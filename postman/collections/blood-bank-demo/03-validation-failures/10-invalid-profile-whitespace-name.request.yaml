@@ -1,0 +1,27 @@
+$kind: http-request
+name: '10 Invalid Profile - Whitespace Name'
+method: PUT
+url: '{{base_url}}/users/profile'
+order: 1000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{donor_a_jwt}}'
+body:
+  type: json
+  content: |-
+    {
+      "name": "   ",
+      "blood_group": "O+",
+      "date_of_birth": "1995-06-15",
+      "gender": "Male"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Whitespace-only name must be rejected (IsNotEmpty after trim)
+      pm.test("Returns 400 for whitespace-only name", function () {
+          pm.response.to.have.status(400);
+      });

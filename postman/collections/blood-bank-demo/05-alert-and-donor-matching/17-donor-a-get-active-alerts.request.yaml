@@ -1,0 +1,16 @@
+$kind: http-request
+name: '17 Donor A - Get Active Alerts'
+method: GET
+url: '{{base_url}}/donations/active'
+order: 3000
+headers:
+  - key: Authorization
+    value: 'Bearer {{donor_a_jwt}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Donor A (near hospital) should see the alert in their active list
+      pm.test("Returns 200 with active alerts for Donor A", function () {
+          pm.response.to.have.status(200);
+      });

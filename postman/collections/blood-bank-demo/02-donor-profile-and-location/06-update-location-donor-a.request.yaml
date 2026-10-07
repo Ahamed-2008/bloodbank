@@ -1,0 +1,28 @@
+$kind: http-request
+name: '06 Update Location - Donor A'
+method: PUT
+url: '{{base_url}}/users/location'
+order: 2000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{donor_a_jwt}}'
+body:
+  type: json
+  content: |-
+    {
+      "latitude": 12.9716,
+      "longitude": 79.1587,
+      "pincode": "632001",
+      "city": "Vellore",
+      "state": "Tamil Nadu"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Verify location update succeeded (Donor A is near the hospital)
+      pm.test("Returns 200 for Donor A location update", function () {
+          pm.response.to.have.status(200);
+      });

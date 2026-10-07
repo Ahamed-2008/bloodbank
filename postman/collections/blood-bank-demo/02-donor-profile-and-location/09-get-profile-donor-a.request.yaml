@@ -1,0 +1,16 @@
+$kind: http-request
+name: '09 Get Profile - Donor A'
+method: GET
+url: '{{base_url}}/users/profile'
+order: 5000
+headers:
+  - key: Authorization
+    value: 'Bearer {{donor_a_jwt}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Verify profile is retrievable after update
+      pm.test("Returns 200 with Donor A profile", function () {
+          pm.response.to.have.status(200);
+      });

@@ -1,0 +1,4 @@
+$kind: collection
+name: '06 Donation Lifecycle'
+description: Donor accepts alert, hospital confirms donation, donor marks arrival.
+order: 6000

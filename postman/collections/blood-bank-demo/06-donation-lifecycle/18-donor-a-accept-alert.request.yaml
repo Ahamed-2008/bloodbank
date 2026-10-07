@@ -1,0 +1,26 @@
+$kind: http-request
+name: '18 Donor A - Accept Alert'
+method: POST
+url: '{{base_url}}/donations/{{alert_id}}/accept'
+order: 1000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{donor_a_jwt}}'
+body:
+  type: json
+  content: |-
+    {
+      "eta_minutes": 15
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      // Save donation_id (response id) for confirmation step
+      pm.test("Returns 200 and saves donation_id", function () {
+          pm.response.to.have.status(200);
+          const json = pm.response.json();
+          pm.environment.set("donation_id", json.id);
+      });

@@ -11,6 +11,7 @@ import { DonationsModule } from './modules/donations/donations.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: '.env',
     }),
     AuthModule,
     UsersModule,
