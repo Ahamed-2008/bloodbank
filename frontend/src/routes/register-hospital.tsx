@@ -15,8 +15,9 @@ import {
 } from "@/components/ui/select";
 import { PublicShell } from "@/components/layout/public-shell";
 import { PageHeader } from "@/components/common/state";
-import { mockDelay } from "@/services/api-client";
-import type { HospitalType } from "@/lib/types";
+import { hospitalService } from "@/services/hospital-service";
+import { formatApiError } from "@/services/api-client";
+import type { RegisterHospitalInput } from "@/lib/types";
 
 export const Route = createFileRoute("/register-hospital")({
   head: () => ({
@@ -40,7 +41,7 @@ export const Route = createFileRoute("/register-hospital")({
 interface FormState {
   name: string;
   registrationNumber: string;
-  type: HospitalType | "";
+  type: "Government" | "Private" | "Trust" | "Clinic" | "";
   contactName: string;
   contactPhone: string;
   contactEmail: string;
@@ -55,68 +56,77 @@ interface FormState {
   licenseExpiryDate: string;
 }
 
-const EMPTY: FormState = {
-  name: "",
-  registrationNumber: "",
-  type: "",
-  contactName: "",
-  contactPhone: "",
-  contactEmail: "",
-  latitude: "",
-  longitude: "",
-  address: "",
-  pincode: "",
-  city: "",
-  state: "",
-  licenseNumber: "",
-  licenseIssuedDate: "",
-  licenseExpiryDate: "",
+const INITIAL: FormState = {
+  name: "City Hospital",
+  registrationNumber: "REG-1001",
+  type: "Private",
+  contactName: "Hospital Admin",
+  contactPhone: "+919888800005",
+  contactEmail: "admin@example.com",
+  latitude: "12.9165",
+  longitude: "79.1325",
+  address: "Hospital Road",
+  pincode: "632001",
+  city: "Vellore",
+  state: "Tamil Nadu",
+  licenseNumber: "LIC-1001",
+  licenseIssuedDate: "2024-01-01",
+  licenseExpiryDate: "2030-12-31",
 };
 
-const TYPES: { value: HospitalType; label: string }[] = [
-  { value: "government", label: "Government" },
-  { value: "private", label: "Private" },
-  { value: "trust", label: "Trust" },
-  { value: "clinic", label: "Clinic" },
+const TYPES: { value: "Government" | "Private" | "Trust" | "Clinic"; label: string }[] = [
+  { value: "Government", label: "Government" },
+  { value: "Private", label: "Private" },
+  { value: "Trust", label: "Trust" },
+  { value: "Clinic", label: "Clinic" },
 ];
+
+function formatIndianPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
+  return phone.trim();
+}
 
 function validate(form: FormState): Partial<Record<keyof FormState, string>> {
   const errors: Partial<Record<keyof FormState, string>> = {};
-  if (form.name.trim().length < 3) errors.name = "Enter the hospital's full name.";
+  if (form.name.trim().length < 2) errors.name = "Enter the hospital name (min 2 chars).";
   if (!form.registrationNumber.trim()) errors.registrationNumber = "Registration number is required.";
   if (!form.type) errors.type = "Select the hospital type.";
   if (!form.contactName.trim()) errors.contactName = "Contact person is required.";
-  if (form.contactPhone.replace(/\D/g, "").length < 10)
-    errors.contactPhone = "Enter a valid 10-digit phone number.";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contactEmail))
+  const cleanPhone = formatIndianPhone(form.contactPhone);
+  if (!/^\+91[6-9]\d{9}$/.test(cleanPhone)) {
+    errors.contactPhone = "Enter a valid Indian phone number (+91 followed by 10 digits).";
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contactEmail)) {
     errors.contactEmail = "Enter a valid email address.";
+  }
   const lat = Number(form.latitude);
-  if (!form.latitude || Number.isNaN(lat) || lat < -90 || lat > 90)
+  if (!form.latitude || Number.isNaN(lat) || lat < -90 || lat > 90) {
     errors.latitude = "Latitude must be between -90 and 90.";
+  }
   const lng = Number(form.longitude);
-  if (!form.longitude || Number.isNaN(lng) || lng < -180 || lng > 180)
+  if (!form.longitude || Number.isNaN(lng) || lng < -180 || lng > 180) {
     errors.longitude = "Longitude must be between -180 and 180.";
-  if (form.address.trim().length < 8) errors.address = "Enter the full street address.";
-  if (!/^\d{6}$/.test(form.pincode)) errors.pincode = "Pincode must be 6 digits.";
+  }
+  if (form.address.trim().length < 3) errors.address = "Enter the street address.";
+  if (!/^\d{6,10}$/.test(form.pincode)) errors.pincode = "Pincode must be 6 to 10 characters.";
   if (!form.city.trim()) errors.city = "City is required.";
   if (!form.state.trim()) errors.state = "State is required.";
-  if (!form.licenseNumber.trim()) errors.licenseNumber = "Blood bank licence number is required.";
+  if (!form.licenseNumber.trim()) errors.licenseNumber = "Licence number is required.";
   if (!form.licenseIssuedDate) errors.licenseIssuedDate = "Issue date is required.";
   if (!form.licenseExpiryDate) errors.licenseExpiryDate = "Expiry date is required.";
-  if (
-    form.licenseIssuedDate &&
-    form.licenseExpiryDate &&
-    form.licenseExpiryDate <= form.licenseIssuedDate
-  )
+  if (form.licenseIssuedDate && form.licenseExpiryDate && form.licenseExpiryDate <= form.licenseIssuedDate) {
     errors.licenseExpiryDate = "Expiry must be after the issue date.";
+  }
   return errors;
 }
 
 function RegisterHospitalPage() {
-  const [form, setForm] = useState<FormState>(EMPTY);
+  const [form, setForm] = useState<FormState>(INITIAL);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [busy, setBusy] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [submittedId, setSubmittedId] = useState<string | null>(null);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -131,20 +141,40 @@ function RegisterHospitalPage() {
       toast.error("Please fix the highlighted fields.");
       return;
     }
+
     setBusy(true);
     try {
-      // POST /hospitals/register — wired to the NestJS API later.
-      await mockDelay(null, 900);
-      setSubmitted(true);
-      toast.success("Application submitted", {
-        description: "Our team reviews new hospitals within two working days.",
+      const payload: RegisterHospitalInput = {
+        name: form.name.trim(),
+        registration_number: form.registrationNumber.trim(),
+        hospital_type: form.type as "Government" | "Private" | "Trust" | "Clinic",
+        contact_name: form.contactName.trim(),
+        contact_phone: formatIndianPhone(form.contactPhone),
+        contact_email: form.contactEmail.trim(),
+        latitude: Number(form.latitude),
+        longitude: Number(form.longitude),
+        address: form.address.trim(),
+        pincode: form.pincode.trim(),
+        city: form.city.trim(),
+        state: form.state.trim(),
+        license_number: form.licenseNumber.trim(),
+        license_issued_at: form.licenseIssuedDate,
+        license_expires_at: form.licenseExpiryDate,
+      };
+
+      const result = await hospitalService.registerHospital(payload);
+      setSubmittedId(result.hospital_id);
+      toast.success("Application submitted successfully", {
+        description: "A platform admin will review your licence details.",
       });
+    } catch (err) {
+      toast.error(formatApiError(err));
     } finally {
       setBusy(false);
     }
   }
 
-  if (submitted) {
+  if (submittedId) {
     return (
       <PublicShell>
         <div className="mx-auto w-full max-w-xl px-4 py-20 text-center sm:px-6">
@@ -153,9 +183,12 @@ function RegisterHospitalPage() {
           </div>
           <h1 className="mt-5 text-2xl font-bold">Application received</h1>
           <p className="mt-3 text-muted-foreground">
-            Thanks — <strong>{form.name}</strong> is now in the verification queue. We'll contact{" "}
-            {form.contactEmail} once the licence details have been reviewed.
+            Thanks — <strong>{form.name}</strong> is now registered and in the verification queue.
+            Once approved by a platform administrator, your staff account will be activated.
           </p>
+          <div className="mt-4 rounded-xl border border-border bg-card p-3 font-mono text-xs text-muted-foreground">
+            Application ID: {submittedId}
+          </div>
           <div className="mt-8 flex justify-center gap-3">
             <Button asChild>
               <Link to="/">Back to home</Link>
@@ -188,7 +221,7 @@ function RegisterHospitalPage() {
       <div className="mx-auto w-full max-w-3xl px-4 py-14 sm:px-6">
         <PageHeader
           title="Hospital registration"
-          description="Tell us about your hospital and blood bank licence. A platform admin reviews every application before it goes live."
+          description="Submit your hospital and blood bank licence details. A platform admin reviews every registration before requests can be raised."
         />
 
         <form onSubmit={handleSubmit} className="mt-10 space-y-6" noValidate>
@@ -201,7 +234,7 @@ function RegisterHospitalPage() {
                   {...field("name")}
                   value={form.name}
                   onChange={(e) => update("name", e.target.value)}
-                  placeholder="Manipal Central Hospital"
+                  placeholder="City General Hospital"
                 />
                 <FieldError name="name" />
               </div>
@@ -211,7 +244,7 @@ function RegisterHospitalPage() {
                   {...field("registrationNumber")}
                   value={form.registrationNumber}
                   onChange={(e) => update("registrationNumber", e.target.value)}
-                  placeholder="KA/HOSP/2011/4482"
+                  placeholder="REG-1001"
                 />
                 <FieldError name="registrationNumber" />
               </div>
@@ -219,7 +252,7 @@ function RegisterHospitalPage() {
                 <Label htmlFor="type">Hospital type</Label>
                 <Select
                   value={form.type}
-                  onValueChange={(value) => update("type", value as HospitalType)}
+                  onValueChange={(value) => update("type", value as FormState["type"])}
                 >
                   <SelectTrigger id="type" aria-invalid={Boolean(errors.type)}>
                     <SelectValue placeholder="Select type" />
@@ -238,7 +271,7 @@ function RegisterHospitalPage() {
           </fieldset>
 
           <fieldset className="rounded-2xl border border-border bg-card p-6 card-elevated">
-            <legend className="px-1 text-sm font-semibold">Primary contact</legend>
+            <legend className="px-1 text-sm font-semibold">Primary contact & Staff Administrator</legend>
             <div className="mt-4 grid gap-5 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="contactName">Contact name</Label>
@@ -251,13 +284,13 @@ function RegisterHospitalPage() {
                 <FieldError name="contactName" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contactPhone">Contact phone</Label>
+                <Label htmlFor="contactPhone">Contact phone (+91...)</Label>
                 <Input
                   {...field("contactPhone")}
                   type="tel"
                   value={form.contactPhone}
                   onChange={(e) => update("contactPhone", e.target.value)}
-                  placeholder="98800 12345"
+                  placeholder="+919888800005"
                 />
                 <FieldError name="contactPhone" />
               </div>
@@ -268,7 +301,7 @@ function RegisterHospitalPage() {
                   type="email"
                   value={form.contactEmail}
                   onChange={(e) => update("contactEmail", e.target.value)}
-                  placeholder="bloodbank@hospital.in"
+                  placeholder="admin@hospital.example"
                 />
                 <FieldError name="contactEmail" />
               </div>
@@ -285,7 +318,7 @@ function RegisterHospitalPage() {
                   inputMode="decimal"
                   value={form.latitude}
                   onChange={(e) => update("latitude", e.target.value)}
-                  placeholder="12.9716"
+                  placeholder="12.9165"
                 />
                 <FieldError name="latitude" />
               </div>
@@ -296,7 +329,7 @@ function RegisterHospitalPage() {
                   inputMode="decimal"
                   value={form.longitude}
                   onChange={(e) => update("longitude", e.target.value)}
-                  placeholder="77.5946"
+                  placeholder="79.1325"
                 />
                 <FieldError name="longitude" />
               </div>
@@ -307,7 +340,7 @@ function RegisterHospitalPage() {
                   rows={2}
                   value={form.address}
                   onChange={(e) => update("address", e.target.value)}
-                  placeholder="98 Airport Road, Kodihalli"
+                  placeholder="Hospital Road"
                 />
                 <FieldError name="address" />
               </div>
@@ -316,10 +349,10 @@ function RegisterHospitalPage() {
                 <Input
                   {...field("pincode")}
                   inputMode="numeric"
-                  maxLength={6}
+                  maxLength={10}
                   value={form.pincode}
-                  onChange={(e) => update("pincode", e.target.value.replace(/\D/g, ""))}
-                  placeholder="560017"
+                  onChange={(e) => update("pincode", e.target.value)}
+                  placeholder="632001"
                 />
                 <FieldError name="pincode" />
               </div>
@@ -329,7 +362,7 @@ function RegisterHospitalPage() {
                   {...field("city")}
                   value={form.city}
                   onChange={(e) => update("city", e.target.value)}
-                  placeholder="Bengaluru"
+                  placeholder="Vellore"
                 />
                 <FieldError name="city" />
               </div>
@@ -339,7 +372,7 @@ function RegisterHospitalPage() {
                   {...field("state")}
                   value={form.state}
                   onChange={(e) => update("state", e.target.value)}
-                  placeholder="Karnataka"
+                  placeholder="Tamil Nadu"
                 />
                 <FieldError name="state" />
               </div>
@@ -355,7 +388,7 @@ function RegisterHospitalPage() {
                   {...field("licenseNumber")}
                   value={form.licenseNumber}
                   onChange={(e) => update("licenseNumber", e.target.value)}
-                  placeholder="BB/KA/2019/1188"
+                  placeholder="LIC-1001"
                 />
                 <FieldError name="licenseNumber" />
               </div>

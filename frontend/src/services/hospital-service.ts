@@ -1,123 +1,126 @@
-import {
-  mockAlerts,
-  mockHospital,
-  mockHospitalStats,
-  mockResponses,
-  mockStaff,
-} from "@/lib/mock-data";
 import type {
-  BloodAlert,
-  DonorResponse,
-  Hospital,
-  HospitalStats,
+  AddStaffInput,
+  AlertDetail,
+  AlertDonorResponse,
+  CreateAlertInput,
+  HospitalAlert,
+  HospitalProfile,
+  RegisterHospitalInput,
   StaffMember,
 } from "@/lib/types";
-import { mockDelay } from "./api-client";
-
-/**
- * Hospital endpoints on the existing NestJS API (to be wired later):
- *   GET   /hospitals/me                 -> hospital profile
- *   GET   /hospitals/me/stats           -> dashboard stats
- *   GET   /hospitals/me/alerts          -> alerts created by this hospital
- *   POST  /alerts                       -> CreateBloodAlertDto
- *   GET   /alerts/:id/responses         -> donor responses
- *   POST  /alerts/:id/responses/:rid/confirm
- *   PATCH /alerts/:id/cancel            -> { reason }
- *   GET/POST /hospitals/me/staff        -> staff management
- */
-
-export interface CreateAlertInput {
-  bloodGroup: string;
-  unitsRequired: number;
-  urgency: string;
-  patientCondition: string;
-  neededBy: string;
-  contactPhone: string;
-  address: string;
-  city: string;
-  state: string;
-  pincode: string;
-  latitude: number;
-  longitude: number;
-  radiusKm: number;
-  notes?: string;
-}
-
-let alerts: BloodAlert[] = mockAlerts.map((a) => ({ ...a }));
-let responses: DonorResponse[] = mockResponses.map((r) => ({ ...r }));
-let staff: StaffMember[] = mockStaff.map((s) => ({ ...s }));
+import { apiRequest } from "./api-client";
 
 export const hospitalService = {
-  getHospital: (): Promise<Hospital> => mockDelay({ ...mockHospital }),
-
-  getStats: (): Promise<HospitalStats> => mockDelay({ ...mockHospitalStats }),
-
-  getAlerts: (): Promise<BloodAlert[]> => mockDelay(alerts.map((a) => ({ ...a }))),
-
-  getAlert: async (id: string): Promise<BloodAlert> => {
-    const found = alerts.find((a) => a.id === id);
-    if (!found) throw new Error("This alert could not be found.");
-    return mockDelay({ ...found });
+  /**
+   * POST /api/v1/hospitals/register
+   * Registers a new hospital and initial admin staff account.
+   */
+  registerHospital: (
+    input: RegisterHospitalInput,
+  ): Promise<{ message: string; hospital_id: string }> => {
+    return apiRequest<{ message: string; hospital_id: string }>("/hospitals/register", {
+      method: "POST",
+      body: input,
+    });
   },
 
-  getResponses: (alertId: string): Promise<DonorResponse[]> =>
-    mockDelay(responses.filter((r) => r.alertId === alertId).map((r) => ({ ...r }))),
-
-  getRecentResponses: (): Promise<DonorResponse[]> =>
-    mockDelay(responses.slice(0, 4).map((r) => ({ ...r }))),
-
-  createAlert: async (input: CreateAlertInput): Promise<BloodAlert> => {
-    await mockDelay(null, 750);
-    const created: BloodAlert = {
-      id: `alt_${Math.floor(Math.random() * 9000 + 1000)}`,
-      bloodGroup: input.bloodGroup as BloodAlert["bloodGroup"],
-      unitsRequired: input.unitsRequired,
-      unitsFulfilled: 0,
-      urgency: input.urgency as BloodAlert["urgency"],
-      status: "open",
-      hospitalId: mockHospital.id,
-      hospitalName: mockHospital.name,
-      city: input.city,
-      state: input.state,
-      address: input.address,
-      distanceKm: 0,
-      patientCondition: input.patientCondition,
-      neededBy: input.neededBy,
-      createdAt: new Date().toISOString(),
-      contactPhone: input.contactPhone,
-      responseCount: 0,
-    };
-    alerts = [created, ...alerts];
-    return created;
+  /**
+   * GET /api/v1/hospitals/profile
+   * Returns current hospital profile and verification details.
+   */
+  getProfile: (): Promise<HospitalProfile> => {
+    return apiRequest<HospitalProfile>("/hospitals/profile");
   },
 
-  confirmDonation: async (alertId: string, responseId: string): Promise<void> => {
-    await mockDelay(null, 600);
-    responses = responses.map((r) => (r.id === responseId ? { ...r, status: "confirmed" } : r));
-    alerts = alerts.map((a) =>
-      a.id === alertId
-        ? { ...a, unitsFulfilled: Math.min(a.unitsRequired, a.unitsFulfilled + 1) }
-        : a,
+  /**
+   * GET /api/v1/hospitals/staff
+   * Lists staff members for this hospital.
+   */
+  getStaff: (): Promise<StaffMember[]> => {
+    return apiRequest<StaffMember[]>("/hospitals/staff");
+  },
+
+  /**
+   * POST /api/v1/hospitals/staff
+   * Adds a staff member (Admin or Operator). Caller must be Admin.
+   */
+  addStaff: (
+    input: AddStaffInput,
+  ): Promise<{ message: string; staff: StaffMember }> => {
+    return apiRequest<{ message: string; staff: StaffMember }>("/hospitals/staff", {
+      method: "POST",
+      body: input,
+    });
+  },
+
+  /**
+   * POST /api/v1/alerts
+   * Creates and broadcasts a new blood alert to nearby compatible donors.
+   */
+  createAlert: (
+    input: CreateAlertInput,
+  ): Promise<{ message: string; alert: HospitalAlert }> => {
+    return apiRequest<{ message: string; alert: HospitalAlert }>("/alerts", {
+      method: "POST",
+      body: input,
+    });
+  },
+
+  /**
+   * GET /api/v1/alerts/hospital
+   * Returns all alerts raised by the caller's hospital.
+   */
+  getHospitalAlerts: (): Promise<HospitalAlert[]> => {
+    return apiRequest<HospitalAlert[]>("/alerts/hospital");
+  },
+
+  /**
+   * GET /api/v1/alerts/:id
+   * Returns details for a specific alert.
+   */
+  getAlert: (alertId: string): Promise<AlertDetail> => {
+    return apiRequest<AlertDetail>(`/alerts/${encodeURIComponent(alertId)}`);
+  },
+
+  /**
+   * GET /api/v1/alerts/:id/responses
+   * Returns donor responses for an alert raised by the caller's hospital.
+   */
+  getAlertResponses: (alertId: string): Promise<AlertDonorResponse[]> => {
+    return apiRequest<AlertDonorResponse[]>(`/alerts/${encodeURIComponent(alertId)}/responses`);
+  },
+
+  /**
+   * PUT /api/v1/alerts/:id/confirm/:responseId
+   * Confirms a donor donation, marks response as Donated, increments units_fulfilled.
+   */
+  confirmDonation: (
+    alertId: string,
+    responseId: string,
+  ): Promise<{
+    message: string;
+    donor_locked_until: string;
+    alert_status: string;
+  }> => {
+    return apiRequest(
+      `/alerts/${encodeURIComponent(alertId)}/confirm/${encodeURIComponent(responseId)}`,
+      {
+        method: "PUT",
+      },
     );
   },
 
-  cancelAlert: async (alertId: string, reason: string): Promise<void> => {
-    await mockDelay(null, 600);
-    alerts = alerts.map((a) =>
-      a.id === alertId ? { ...a, status: "cancelled", cancellationReason: reason } : a,
-    );
-  },
-
-  getStaff: (): Promise<StaffMember[]> => mockDelay(staff.map((s) => ({ ...s }))),
-
-  addStaff: async (input: Omit<StaffMember, "id" | "addedAt">): Promise<StaffMember> => {
-    await mockDelay(null, 650);
-    const created: StaffMember = {
-      ...input,
-      id: `stf_${Math.floor(Math.random() * 900 + 100)}`,
-      addedAt: new Date().toISOString().slice(0, 10),
-    };
-    staff = [...staff, created];
-    return created;
+  /**
+   * PUT /api/v1/alerts/:id/cancel
+   * Cancels an active blood alert with a required cancellation reason.
+   */
+  cancelAlert: (
+    alertId: string,
+    cancellation_reason: string,
+  ): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>(`/alerts/${encodeURIComponent(alertId)}/cancel`, {
+      method: "PUT",
+      body: { cancellation_reason },
+    });
   },
 };

@@ -1,17 +1,21 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { BellRing, Building2, Clock, Droplets, Percent, Users } from "lucide-react";
+import { BellRing, Building2, Clock, Droplets, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader, LoadingState, ErrorState } from "@/components/common/state";
 import { StatCard } from "@/components/common/stat-card";
-import { BloodGroupBadge } from "@/components/common/badges";
 import { adminService } from "@/services/admin-service";
+import { formatApiError } from "@/services/api-client";
 
 export const Route = createFileRoute("/admin/")({
   head: () => ({
     meta: [
       { title: "Admin dashboard — BloodLink" },
-      { name: "description", content: "Network-wide stats: hospitals, pending verifications, donors and active blood alerts." },
+      {
+        name: "description",
+        content:
+          "Network-wide stats: hospitals, pending verifications, donors and active blood alerts.",
+      },
       { property: "og:title", content: "Admin dashboard — BloodLink" },
       { property: "og:description", content: "BloodLink network overview." },
     ],
@@ -20,45 +24,102 @@ export const Route = createFileRoute("/admin/")({
 });
 
 function AdminDashboard() {
-  const q = useQuery({ queryKey: ["admin", "stats"], queryFn: adminService.getStats });
-  if (q.isPending) return <LoadingState rows={3} />;
-  if (q.isError) return <ErrorState onRetry={() => void q.refetch()} />;
-  const s = q.data;
-  const max = Math.max(1, ...s.alertsByGroup.map((g) => g.alerts));
+  const dashboardQuery = useQuery({
+    queryKey: ["admin", "dashboard"],
+    queryFn: adminService.getDashboard,
+  });
+
+  if (dashboardQuery.isPending) return <LoadingState rows={3} />;
+  if (dashboardQuery.isError) {
+    return (
+      <ErrorState
+        message={formatApiError(dashboardQuery.error)}
+        onRetry={() => void dashboardQuery.refetch()}
+      />
+    );
+  }
+
+  const s = dashboardQuery.data;
 
   return (
     <div className="space-y-8">
       <PageHeader
         title="Network overview"
-        description="Everything happening across BloodLink today."
+        description="Real-time status across blood banks, registered donors, and active emergency alerts."
         actions={
-          s.pendingVerifications > 0 ? (
-            <Button asChild><Link to="/admin/hospitals">Review {s.pendingVerifications} pending</Link></Button>
+          s.pending_hospitals > 0 ? (
+            <Button asChild>
+              <Link to="/admin/hospitals">Review {s.pending_hospitals} pending hospitals</Link>
+            </Button>
           ) : null
         }
       />
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard label="Hospitals" value={s.hospitals} icon={Building2} tone="info" />
-        <StatCard label="Pending verifications" value={s.pendingVerifications} icon={Clock} tone="warning" />
-        <StatCard label="Registered donors" value={s.donors.toLocaleString("en-IN")} icon={Users} tone="success" />
-        <StatCard label="Active blood alerts" value={s.activeAlerts} icon={BellRing} tone="primary" />
-        <StatCard label="Units fulfilled this month" value={s.unitsFulfilledThisMonth} icon={Droplets} />
-        <StatCard label="Donor response rate" value={`${s.responseRate}%`} icon={Percent} />
+        <StatCard
+          label="Registered donors"
+          value={s.total_donors.toLocaleString("en-IN")}
+          icon={Users}
+          tone="success"
+        />
+        <StatCard
+          label="Registered hospitals"
+          value={s.total_hospitals}
+          icon={Building2}
+          tone="info"
+        />
+        <StatCard
+          label="Pending hospital verifications"
+          value={s.pending_hospitals}
+          hint={s.pending_hospitals > 0 ? "Action required" : "All reviewed"}
+          icon={Clock}
+          tone={s.pending_hospitals > 0 ? "warning" : "default"}
+        />
+        <StatCard
+          label="Active blood alerts"
+          value={s.active_alerts}
+          icon={BellRing}
+          tone="primary"
+        />
+        <StatCard
+          label="Total completed donations"
+          value={s.total_donations}
+          icon={Droplets}
+          tone="success"
+        />
       </div>
-      <section className="rounded-2xl border border-border bg-card p-6 card-elevated">
-        <h2 className="font-semibold">Open alerts by blood group</h2>
-        <ul className="mt-5 space-y-3">
-          {s.alertsByGroup.map((g) => (
-            <li key={g.bloodGroup} className="flex items-center gap-3">
-              <BloodGroupBadge group={g.bloodGroup} size="sm" className="w-14" />
-              <div className="h-3 flex-1 overflow-hidden rounded-full bg-muted">
-                <div className="h-full rounded-full bg-primary" style={{ width: `${(g.alerts / max) * 100}%` }} />
-              </div>
-              <span className="w-8 text-right text-sm font-semibold tabular-nums">{g.alerts}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-2xl border border-border bg-card p-6 card-elevated">
+          <h3 className="font-semibold">Hospital verification queue</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Review hospital registrations, check medical licence credentials, and activate staff administrator logins.
+          </p>
+          <Button asChild variant="outline" className="mt-4">
+            <Link to="/admin/hospitals">Manage hospitals</Link>
+          </Button>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-6 card-elevated">
+          <h3 className="font-semibold">Donor verification</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Review donor Aadhaar and identity verifications so verified donors can begin receiving urgent nearby requests.
+          </p>
+          <Button asChild variant="outline" className="mt-4">
+            <Link to="/admin/donors">Manage donors</Link>
+          </Button>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-6 card-elevated">
+          <h3 className="font-semibold">Network alerts monitor</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Monitor active blood alerts across all participating hospitals, tracked by blood group, urgency, and fulfillment.
+          </p>
+          <Button asChild variant="outline" className="mt-4">
+            <Link to="/admin/alerts">Monitor alerts</Link>
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

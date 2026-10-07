@@ -1,49 +1,106 @@
-import { mockAdminDonors, mockAdminStats, mockAlerts, mockHospitals } from "@/lib/mock-data";
-import type { AdminDonor, AdminStats, BloodAlert, Hospital } from "@/lib/types";
-import { mockDelay } from "./api-client";
-
-/**
- * Admin endpoints on the existing NestJS API (to be wired later):
- *   GET   /admin/stats
- *   GET   /admin/hospitals?status=
- *   PATCH /admin/hospitals/:id/verify
- *   PATCH /admin/hospitals/:id/reject   -> { reason }
- *   GET   /admin/donors?search=
- *   GET   /admin/alerts?status=open
- */
-
-let hospitals: Hospital[] = mockHospitals.map((h) => ({ ...h }));
+import type {
+  AdminAlert,
+  AdminDashboardStats,
+  AdminDonor,
+  AdminHospital,
+  AdminHospitalDetail,
+  VerificationStatus,
+} from "@/lib/types";
+import { apiRequest } from "./api-client";
 
 export const adminService = {
-  getStats: (): Promise<AdminStats> => mockDelay({ ...mockAdminStats }),
-
-  getHospitals: (): Promise<Hospital[]> => mockDelay(hospitals.map((h) => ({ ...h }))),
-
-  getHospital: async (id: string): Promise<Hospital> => {
-    const found = hospitals.find((h) => h.id === id);
-    if (!found) throw new Error("Hospital not found.");
-    return mockDelay({ ...found });
+  /**
+   * GET /api/v1/admin/dashboard
+   * Returns network-wide counts: donors, hospitals, pending verifications, alerts, donations.
+   */
+  getDashboard: (): Promise<AdminDashboardStats> => {
+    return apiRequest<AdminDashboardStats>("/admin/dashboard");
   },
 
-  approveHospital: async (id: string): Promise<void> => {
-    await mockDelay(null, 600);
-    hospitals = hospitals.map((h) => {
-      if (h.id !== id) return h;
-      const next: Hospital = { ...h, verificationStatus: "verified" };
-      delete next.rejectionReason;
-      return next;
+  /**
+   * GET /api/v1/admin/hospitals
+   * Lists hospitals with optional status filter ('Pending' | 'Approved' | 'Rejected').
+   */
+  getHospitals: (status?: VerificationStatus): Promise<AdminHospital[]> => {
+    // Backend expects 'Pending', 'Approved', 'Rejected'
+    let queryStatus: string | undefined = undefined;
+    if (typeof status === "string" && status.trim()) {
+      const s = status.toLowerCase();
+      if (s === "pending") queryStatus = "Pending";
+      else if (s === "approved" || s === "verified") queryStatus = "Approved";
+      else if (s === "rejected") queryStatus = "Rejected";
+      else queryStatus = status;
+    }
+    return apiRequest<AdminHospital[]>("/admin/hospitals", {
+      query: queryStatus ? { status: queryStatus } : undefined,
     });
   },
 
-  rejectHospital: async (id: string, reason: string): Promise<void> => {
-    await mockDelay(null, 600);
-    hospitals = hospitals.map((h) =>
-      h.id === id ? { ...h, verificationStatus: "rejected", rejectionReason: reason } : h,
-    );
+  /**
+   * GET /api/v1/admin/hospitals/:id
+   * Returns full hospital profile, license verifications, and staff list.
+   */
+  getHospital: (id: string): Promise<AdminHospitalDetail> => {
+    return apiRequest<AdminHospitalDetail>(`/admin/hospitals/${encodeURIComponent(id)}`);
   },
 
-  getDonors: (): Promise<AdminDonor[]> => mockDelay(mockAdminDonors.map((d) => ({ ...d }))),
+  /**
+   * PUT /api/v1/admin/hospitals/:id/approve
+   * Approves hospital and activates the primary admin staff account.
+   */
+  approveHospital: (id: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>(`/admin/hospitals/${encodeURIComponent(id)}/approve`, {
+      method: "PUT",
+    });
+  },
 
-  getActiveAlerts: (): Promise<BloodAlert[]> =>
-    mockDelay(mockAlerts.filter((a) => a.status === "open").map((a) => ({ ...a }))),
+  /**
+   * PUT /api/v1/admin/hospitals/:id/reject
+   * Rejects hospital verification with a required reason (10-500 characters).
+   */
+  rejectHospital: (id: string, reason: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>(`/admin/hospitals/${encodeURIComponent(id)}/reject`, {
+      method: "PUT",
+      body: { reason },
+    });
+  },
+
+  /**
+   * GET /api/v1/admin/donors
+   * Lists donors with optional verified filter ('true' | 'false').
+   */
+  getDonors: (verified?: boolean): Promise<AdminDonor[]> => {
+    return apiRequest<AdminDonor[]>("/admin/donors", {
+      query: typeof verified === "boolean" ? { verified: String(verified) } : undefined,
+    });
+  },
+
+  /**
+   * PUT /api/v1/admin/donors/:id/approve
+   * Approves donor verification (sets aadhaar_verified = true).
+   */
+  approveDonor: (id: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>(`/admin/donors/${encodeURIComponent(id)}/approve`, {
+      method: "PUT",
+    });
+  },
+
+  /**
+   * PUT /api/v1/admin/donors/:id/reject
+   * Rejects donor verification with a required reason (10-500 characters).
+   */
+  rejectDonor: (id: string, reason: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>(`/admin/donors/${encodeURIComponent(id)}/reject`, {
+      method: "PUT",
+      body: { reason },
+    });
+  },
+
+  /**
+   * GET /api/v1/admin/alerts
+   * Lists all active blood alerts across all hospitals.
+   */
+  getActiveAlerts: (): Promise<AdminAlert[]> => {
+    return apiRequest<AdminAlert[]>("/admin/alerts");
+  },
 };

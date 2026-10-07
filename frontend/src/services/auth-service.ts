@@ -1,50 +1,67 @@
-import type { AuthUser, Role } from "@/lib/types";
-import { mockDelay } from "./api-client";
+import type { AuthResponse, Role } from "@/lib/types";
+import { apiRequest } from "./api-client";
 
-/**
- * MOCK auth. Replace bodies with:
- *   POST /auth/otp/request  { phone }
- *   POST /auth/otp/verify   { phone, otp } -> { accessToken, user }
- */
+export interface DemoAccount {
+  label: string;
+  phone: string;
+  otp: string;
+  role: Role;
+}
 
-export const MOCK_OTP = "123456";
+export const DEMO_ACCOUNTS: DemoAccount[] = [
+  { label: "Donor 1", phone: "+919999900001", otp: "111111", role: "donor" },
+  { label: "Donor 2", phone: "+919999900002", otp: "111111", role: "donor" },
+  { label: "Hospital Staff", phone: "+919999900003", otp: "222222", role: "hospital_staff" },
+  { label: "Admin", phone: "+919999900004", otp: "333333", role: "admin" },
+];
 
-const DEMO_USERS: Record<Role, AuthUser> = {
-  donor: {
-    id: "dnr_1042",
-    name: "Ananya Sharma",
-    phone: "+91 98450 21188",
-    role: "donor",
-  },
-  hospital_staff: {
-    id: "stf_301",
-    name: "Dr. Vikram Menon",
-    phone: "+91 98800 12345",
-    role: "hospital_staff",
-    hospitalName: "Manipal Central Hospital",
-  },
-  admin: {
-    id: "adm_001",
-    name: "Nisha Grover",
-    phone: "+91 90000 00001",
-    role: "admin",
-  },
-};
+export interface JwtPayload {
+  sub: string;
+  phone: string;
+  role: Role;
+  hospital_id?: string;
+  staff_role?: string;
+  admin_role?: string;
+  iat?: number;
+  exp?: number;
+}
+
+export function decodeJwt(token: string): JwtPayload | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join(""),
+    );
+    return JSON.parse(jsonPayload) as JwtPayload;
+  } catch {
+    return null;
+  }
+}
 
 export const authService = {
-  async requestOtp(phone: string): Promise<{ sent: true; expiresInSeconds: number }> {
-    if (!/^\d{10}$/.test(phone.replace(/\D/g, "").slice(-10))) {
-      throw new Error("Enter a valid 10-digit mobile number.");
-    }
-    return mockDelay({ sent: true as const, expiresInSeconds: 60 }, 700);
+  /**
+   * Signs in using seeded demo credentials (POST /auth/demo-sign-in).
+   */
+  async signInWithDemo(phone: string, otp: string): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>("/auth/demo-sign-in", {
+      method: "POST",
+      body: { phone, otp },
+    });
   },
 
-  async verifyOtp(phone: string, otp: string, role: Role): Promise<AuthUser> {
-    await mockDelay(null, 700);
-    if (otp !== MOCK_OTP) {
-      throw new Error("That code doesn't match. Use 123456 for this demo.");
-    }
-    const base = DEMO_USERS[role];
-    return { ...base, phone: phone || base.phone };
+  /**
+   * Signs in using a verified Firebase ID token (POST /auth/sign-in).
+   */
+  async signInWithFirebase(idToken: string): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>("/auth/sign-in", {
+      method: "POST",
+      body: { idToken },
+    });
   },
 };

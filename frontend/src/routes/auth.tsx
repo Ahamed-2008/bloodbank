@@ -1,15 +1,19 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, KeyRound, Loader2, ShieldCheck, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { Brand } from "@/components/layout/brand";
 import { ROLE_HOME, useAuth } from "@/lib/auth-context";
-import { MOCK_OTP, authService } from "@/services/auth-service";
-import type { Role } from "@/lib/types";
+import { DEMO_ACCOUNTS, authService, decodeJwt } from "@/services/auth-service";
+import { formatApiError } from "@/services/api-client";
+import { donorService } from "@/services/donor-service";
+import { hospitalService } from "@/services/hospital-service";
+import type { AuthUser, Role } from "@/lib/types";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -18,77 +22,139 @@ export const Route = createFileRoute("/auth")({
       {
         name: "description",
         content:
-          "Sign in to BloodLink with your mobile number to respond to blood requests, manage hospital alerts, or review verifications.",
+          "Sign in to BloodLink with demo credentials or a Firebase ID token to respond to blood requests, manage hospital alerts, or review verifications.",
       },
       { property: "og:title", content: "Sign in to BloodLink" },
-      { property: "og:description", content: "Mobile number sign-in for donors and hospitals." },
+      { property: "og:description", content: "Mobile and demo sign-in for donors and hospitals." },
     ],
   }),
   component: AuthPage,
 });
 
-const ROLE_TABS: { value: Role; label: string; hint: string }[] = [
-  { value: "donor", label: "Donor", hint: "Respond to nearby blood requests." },
-  { value: "hospital_staff", label: "Hospital", hint: "Raise requests and confirm donations." },
-  { value: "admin", label: "Admin", hint: "Verify hospitals and monitor the network." },
-];
+type AuthMode = "demo" | "firebase";
 
 function AuthPage() {
   const navigate = useNavigate();
   const { signIn, user, isLoading } = useAuth();
 
-  const [role, setRole] = useState<Role>("donor");
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
-  const [step, setStep] = useState<"phone" | "otp">("phone");
+  const [mode, setMode] = useState<AuthMode>("demo");
+  const [selectedDemoIndex, setSelectedDemoIndex] = useState<number>(0);
+  const [phone, setPhone] = useState(DEMO_ACCOUNTS[0].phone);
+  const [otp, setOtp] = useState(DEMO_ACCOUNTS[0].otp);
+  const [firebaseToken, setFirebaseToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isLoading && user) void navigate({ to: ROLE_HOME[user.role], replace: true });
+    if (!isLoading && user) {
+      void navigate({ to: ROLE_HOME[user.role], replace: true });
+    }
   }, [isLoading, user, navigate]);
 
-  async function handleSendOtp(event: React.FormEvent) {
-    event.preventDefault();
+  function selectDemoAccount(index: number) {
+    setSelectedDemoIndex(index);
+    const acc = DEMO_ACCOUNTS[index];
+    setPhone(acc.phone);
+    setOtp(acc.otp);
     setError(null);
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 10) {
-      setError("Enter a valid 10-digit mobile number.");
+  }
+
+  async function handleDemoSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    const cleanPhone = phone.trim();
+    const cleanOtp = otp.trim();
+
+    if (!cleanPhone) {
+      setError("Please enter a phone number.");
       return;
     }
+    if (!cleanOtp) {
+      setError("Please enter the OTP.");
+      return;
+    }
+
     setBusy(true);
     try {
-      await authService.requestOtp(phone);
-      setStep("otp");
-      toast.success("Verification code sent", { description: `Demo code: ${MOCK_OTP}` });
+      const result = await authService.signInWithDemo(cleanPhone, cleanOtp);
+      await finishSignIn(result.token, result.role, result.isNewUser);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send the code.");
+      setError(formatApiError(err));
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleVerify(event: React.FormEvent) {
-    event.preventDefault();
+  async function handleFirebaseSignIn(e: React.FormEvent) {
+    e.preventDefault();
     setError(null);
-    if (otp.trim().length !== 6) {
-      setError("Enter the 6-digit code.");
+
+    const token = firebaseToken.trim();
+    if (!token) {
+      setError("Please enter or paste a valid Firebase ID token.");
       return;
     }
+
     setBusy(true);
     try {
-      const nextUser = await authService.verifyOtp(phone, otp.trim(), role);
-      signIn(nextUser);
-      toast.success(`Welcome back, ${nextUser.name.split(" ")[0]}`);
-      void navigate({ to: ROLE_HOME[nextUser.role], replace: true });
+      const result = await authService.signInWithFirebase(token);
+      await finishSignIn(result.token, result.role, result.isNewUser);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not verify the code.");
+      setError(formatApiError(err));
     } finally {
       setBusy(false);
     }
   }
 
-  const activeRole = ROLE_TABS.find((tab) => tab.value === role)!;
+  async function finishSignIn(token: string, role: Role, isNewUser: boolean) {
+    const decoded = decodeJwt(token);
+    let displayName = decoded?.phone || (role === "admin" ? "Platform Admin" : "User");
+    let hospitalName: string | undefined = undefined;
+
+    // Tentatively record token so subsequent profile call is authenticated
+    signIn(
+      {
+        id: decoded?.sub || "user",
+        name: displayName,
+        phone: decoded?.phone || phone,
+        role,
+        isNewUser,
+      },
+      token,
+    );
+
+    // Fetch rich name if available
+    try {
+      if (role === "donor") {
+        const profile = await donorService.getProfile();
+        if (profile.name && profile.name.trim()) {
+          displayName = profile.name.trim();
+        }
+      } else if (role === "hospital_staff") {
+        const hospital = await hospitalService.getProfile();
+        if (hospital.name) {
+          hospitalName = hospital.name;
+          displayName = hospital.contact_name || hospital.name;
+        }
+      }
+    } catch {
+      // Continue with token payload display name if profile lookup fails
+    }
+
+    const authUser: AuthUser = {
+      id: decoded?.sub || "user",
+      name: displayName,
+      phone: decoded?.phone || phone,
+      role,
+      hospitalName,
+      isNewUser,
+    };
+
+    signIn(authUser, token);
+    toast.success(`Welcome, ${displayName.split(" ")[0] || "User"}!`);
+    void navigate({ to: ROLE_HOME[role], replace: true });
+  }
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
@@ -99,133 +165,165 @@ function AuthPage() {
             Every minute counts when blood is needed.
           </h1>
           <p className="mt-4 max-w-md text-muted-foreground">
-            Sign in to see requests near you, or to coordinate your hospital's blood needs with
-            donors who can actually reach you in time.
+            Sign in to respond to blood requests near you, coordinate your hospital's blood needs,
+            or manage network verifications.
           </p>
           <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm">
             <ShieldCheck className="size-4 text-success" aria-hidden />
-            Only verified hospitals can raise requests
+            Role-enforced verification and security
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Demo interface with sample data. No real medical records are stored.
+          Connected to BloodConnect REST API on localhost:3000
         </p>
       </div>
 
       <div className="flex flex-col justify-center px-4 py-12 sm:px-10">
-        <div className="mx-auto w-full max-w-sm">
+        <div className="mx-auto w-full max-w-md">
           <div className="lg:hidden">
             <Brand />
           </div>
 
           <h2 className="mt-8 text-2xl font-bold lg:mt-0">Sign in</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            We'll text a one-time code to your mobile number.
+            Sign in using seeded demo accounts or Firebase ID token.
           </p>
 
           <Tabs
-            value={role}
-            onValueChange={(value) => {
-              setRole(value as Role);
-              setStep("phone");
-              setOtp("");
+            value={mode}
+            onValueChange={(val) => {
+              setMode(val as AuthMode);
               setError(null);
             }}
             className="mt-6"
           >
-            <TabsList className="grid w-full grid-cols-3">
-              {ROLE_TABS.map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value}>
-                  {tab.label}
-                </TabsTrigger>
-              ))}
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="demo">Demo Accounts</TabsTrigger>
+              <TabsTrigger value="firebase">Firebase ID Token</TabsTrigger>
             </TabsList>
           </Tabs>
-          <p className="mt-2 text-xs text-muted-foreground">{activeRole.hint}</p>
 
-          {step === "phone" ? (
-            <form onSubmit={handleSendOtp} className="mt-6 space-y-4" noValidate>
-              <div className="space-y-2">
-                <Label htmlFor="phone">Mobile number</Label>
-                <Input
-                  id="phone"
-                  name="phone"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  placeholder="98450 21188"
-                  value={phone}
-                  onChange={(event) => setPhone(event.target.value)}
-                  aria-invalid={Boolean(error)}
-                  aria-describedby={error ? "auth-error" : undefined}
-                />
+          {mode === "demo" ? (
+            <div className="mt-6 space-y-6">
+              <div>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase">
+                  Select a demo account
+                </Label>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {DEMO_ACCOUNTS.map((acc, index) => {
+                    const isSelected = selectedDemoIndex === index;
+                    return (
+                      <button
+                        key={acc.phone}
+                        type="button"
+                        onClick={() => selectDemoAccount(index)}
+                        className={`flex flex-col items-start rounded-xl border p-3 text-left transition-all ${
+                          isSelected
+                            ? "border-primary bg-primary/5 text-primary"
+                            : "border-border bg-card hover:border-muted-foreground/30"
+                        }`}
+                      >
+                        <span className="text-xs font-semibold">{acc.label}</span>
+                        <span className="mt-1 font-mono text-[11px] text-muted-foreground">
+                          {acc.phone}
+                        </span>
+                        <span className="mt-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+                          {acc.role.replace("_", " ")}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              {error ? (
-                <p id="auth-error" role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
-              ) : null}
-              <Button type="submit" className="w-full" disabled={busy}>
-                {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-                Send code
-              </Button>
-            </form>
+
+              <form onSubmit={handleDemoSignIn} className="space-y-4" noValidate>
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone number</Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+919999900001"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="otp">Fixed demo OTP</Label>
+                  <Input
+                    id="otp"
+                    type="text"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    placeholder="111111"
+                    maxLength={6}
+                    className="tracking-[0.3em]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Donor: 111111 · Hospital: 222222 · Admin: 333333
+                  </p>
+                </div>
+
+                {error ? (
+                  <div
+                    role="alert"
+                    className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
+                  >
+                    {error}
+                  </div>
+                ) : null}
+
+                <Button type="submit" className="w-full" disabled={busy}>
+                  {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+                  Sign in as {DEMO_ACCOUNTS[selectedDemoIndex]?.label ?? "Demo User"}
+                </Button>
+              </form>
+            </div>
           ) : (
-            <form onSubmit={handleVerify} className="mt-6 space-y-4" noValidate>
-              <button
-                type="button"
-                onClick={() => {
-                  setStep("phone");
-                  setError(null);
-                }}
-                className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-              >
-                <ArrowLeft className="size-4" aria-hidden />
-                Change number
-              </button>
+            <form onSubmit={handleFirebaseSignIn} className="mt-6 space-y-4" noValidate>
               <div className="space-y-2">
-                <Label htmlFor="otp">6-digit code sent to {phone}</Label>
-                <Input
-                  id="otp"
-                  name="otp"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  placeholder="123456"
-                  value={otp}
-                  onChange={(event) => setOtp(event.target.value.replace(/\D/g, ""))}
-                  aria-invalid={Boolean(error)}
-                  aria-describedby={error ? "otp-error" : "otp-hint"}
-                  className="tracking-[0.4em]"
+                <Label htmlFor="firebase-token">Firebase ID Token</Label>
+                <Textarea
+                  id="firebase-token"
+                  rows={4}
+                  placeholder="Paste Firebase ID token (JWT) containing verified phone number..."
+                  value={firebaseToken}
+                  onChange={(e) => setFirebaseToken(e.target.value)}
+                  className="font-mono text-xs"
                 />
-                <p id="otp-hint" className="text-xs text-muted-foreground">
-                  Use {MOCK_OTP} for this demo.
+                <p className="text-xs text-muted-foreground">
+                  The backend verifies this token with Firebase Admin SDK and issues an application JWT.
                 </p>
               </div>
+
               {error ? (
-                <p id="otp-error" role="alert" className="text-sm text-destructive">
+                <div
+                  role="alert"
+                  className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
+                >
                   {error}
-                </p>
+                </div>
               ) : null}
+
               <Button type="submit" className="w-full" disabled={busy}>
                 {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-                Verify and continue
+                Verify & Sign in
               </Button>
             </form>
           )}
 
-          <p className="mt-8 text-sm text-muted-foreground">
-            Representing a hospital that isn't registered yet?{" "}
-            <Link to="/register-hospital" className="font-semibold text-primary hover:underline">
-              Apply here
-            </Link>
-            .
-          </p>
-          <p className="mt-3 text-sm">
-            <Link to="/" className="text-muted-foreground hover:text-foreground">
-              ← Back to home
-            </Link>
-          </p>
+          <div className="mt-8 border-t border-border pt-6">
+            <p className="text-sm text-muted-foreground">
+              New hospital looking to join?{" "}
+              <Link to="/register-hospital" className="font-semibold text-primary hover:underline">
+                Register hospital
+              </Link>
+            </p>
+            <p className="mt-2 text-sm">
+              <Link to="/" className="text-muted-foreground hover:text-foreground">
+                ← Back to home
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
     </div>

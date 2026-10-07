@@ -1,20 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2, LocateFixed, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PageHeader, LoadingState, ErrorState } from "@/components/common/state";
+import { PageHeader } from "@/components/common/state";
 import { donorService } from "@/services/donor-service";
-import type { DonorLocation } from "@/lib/types";
+import { formatApiError } from "@/services/api-client";
+import type { UpdateLocationInput } from "@/lib/types";
 
 export const Route = createFileRoute("/donor/location")({
   head: () => ({
     meta: [
       { title: "Your location — BloodLink" },
-      { name: "description", content: "Set your location so BloodLink can alert you to requests nearby." },
+      {
+        name: "description",
+        content: "Set your location so BloodLink can alert you to requests nearby.",
+      },
       { property: "og:title", content: "Your location — BloodLink" },
       { property: "og:description", content: "Manage the location used for nearby alerts." },
     ],
@@ -24,81 +28,162 @@ export const Route = createFileRoute("/donor/location")({
 
 function LocationPage() {
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["donor", "location"], queryFn: donorService.getLocation });
-  const [form, setForm] = useState<DonorLocation | null>(null);
+
+  const [form, setForm] = useState<UpdateLocationInput>({
+    latitude: 12.9165,
+    longitude: 79.1325,
+    pincode: "632001",
+    city: "Vellore",
+    state: "Tamil Nadu",
+  });
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    if (q.data) setForm(q.data);
-  }, [q.data]);
-  const save = useMutation({
+
+  const saveMutation = useMutation({
     mutationFn: donorService.updateLocation,
-    onSuccess: (d) => {
-      qc.setQueryData(["donor", "location"], d);
-      toast.success("Location updated");
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ["donor"] });
+      toast.success(data.message || "Location updated successfully");
+      setError(null);
+    },
+    onError: (err) => {
+      setError(formatApiError(err));
+      toast.error(formatApiError(err));
     },
   });
 
-  if (q.isError) return <ErrorState onRetry={() => void q.refetch()} />;
-  if (!form) return <LoadingState rows={2} />;
-
   function locateDevice() {
-    if (!navigator.geolocation) return toast.error("Location isn't available in this browser.");
+    if (!navigator.geolocation) {
+      return toast.error("Geolocation is not supported by your browser.");
+    }
     navigator.geolocation.getCurrentPosition(
-      (pos) => setForm((f) => f && { ...f, latitude: +pos.coords.latitude.toFixed(5), longitude: +pos.coords.longitude.toFixed(5) }),
-      () => toast.error("Couldn't read your location. Enter it manually."),
+      (pos) => {
+        setForm((prev) => ({
+          ...prev,
+          latitude: +pos.coords.latitude.toFixed(5),
+          longitude: +pos.coords.longitude.toFixed(5),
+        }));
+        toast.success("Current GPS coordinates detected!");
+      },
+      () => toast.error("Could not obtain GPS coordinates. Please enter manually."),
     );
   }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form) return;
-    if (Math.abs(form.latitude) > 90 || Math.abs(form.longitude) > 180) return setError("Check latitude and longitude.");
-    if (!/^\d{6}$/.test(form.pincode)) return setError("Pincode must be 6 digits.");
-    if (!form.city.trim() || !form.state.trim()) return setError("City and state are required.");
     setError(null);
-    save.mutate(form);
-  }
 
-  const text = (k: "pincode" | "city" | "state") => ({
-    id: k,
-    value: form[k],
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value }),
-  });
+    if (Math.abs(form.latitude) > 90) {
+      setError("Latitude must be between -90 and 90.");
+      return;
+    }
+    if (Math.abs(form.longitude) > 180) {
+      setError("Longitude must be between -180 and 180.");
+      return;
+    }
+    if (!/^\d{6}$/.test(form.pincode)) {
+      setError("Pincode must be exactly 6 numeric digits.");
+      return;
+    }
+
+    saveMutation.mutate(form);
+  }
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Location" description="Used only to find requests within your alert radius." />
+      <PageHeader
+        title="Location"
+        description="Used to match you with emergency blood requests within your travel radius."
+      />
+
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <form onSubmit={submit} className="space-y-5 rounded-2xl border border-border bg-card p-6 card-elevated" noValidate>
+        <form
+          onSubmit={submit}
+          className="space-y-5 rounded-2xl border border-border bg-card p-6 card-elevated"
+          noValidate
+        >
           <Button type="button" variant="outline" onClick={locateDevice}>
-            <LocateFixed className="size-4" aria-hidden /> Use my current location
+            <LocateFixed className="size-4" aria-hidden /> Use my current GPS location
           </Button>
+
           <div className="grid gap-5 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="lat">Latitude</Label>
-              <Input id="lat" type="number" step="any" value={form.latitude} onChange={(e) => setForm({ ...form, latitude: Number(e.target.value) })} />
+              <Input
+                id="lat"
+                type="number"
+                step="any"
+                value={form.latitude}
+                onChange={(e) => setForm({ ...form, latitude: parseFloat(e.target.value) || 0 })}
+              />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="lng">Longitude</Label>
-              <Input id="lng" type="number" step="any" value={form.longitude} onChange={(e) => setForm({ ...form, longitude: Number(e.target.value) })} />
+              <Input
+                id="lng"
+                type="number"
+                step="any"
+                value={form.longitude}
+                onChange={(e) => setForm({ ...form, longitude: parseFloat(e.target.value) || 0 })}
+              />
             </div>
-            <div className="space-y-2"><Label htmlFor="pincode">Pincode</Label><Input {...text("pincode")} inputMode="numeric" maxLength={6} /></div>
-            <div className="space-y-2"><Label htmlFor="city">City</Label><Input {...text("city")} /></div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="state">State</Label><Input {...text("state")} /></div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pincode">Pincode (6 digits)</Label>
+              <Input
+                id="pincode"
+                inputMode="numeric"
+                maxLength={6}
+                value={form.pincode}
+                onChange={(e) => setForm({ ...form, pincode: e.target.value.replace(/\D/g, "") })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="city">City (optional)</Label>
+              <Input
+                id="city"
+                value={form.city ?? ""}
+                onChange={(e) => setForm({ ...form, city: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="state">State (optional)</Label>
+              <Input
+                id="state"
+                value={form.state ?? ""}
+                onChange={(e) => setForm({ ...form, state: e.target.value })}
+              />
+            </div>
           </div>
-          {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-          <Button type="submit" disabled={save.isPending}>
-            {save.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+
+          <Button type="submit" disabled={saveMutation.isPending}>
+            {saveMutation.isPending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : null}
             Save location
           </Button>
         </form>
-        <aside className="grid-hairline flex flex-col items-center justify-center rounded-2xl border border-border bg-surface p-8 text-center">
+
+        <aside className="flex flex-col items-center justify-center rounded-2xl border border-border bg-surface p-8 text-center">
           <span className="grid size-14 place-items-center rounded-full brand-surface">
             <MapPin className="size-7" aria-hidden />
           </span>
-          <p className="mt-4 font-semibold">{form.city}, {form.state}</p>
+          <p className="mt-4 font-semibold">
+            {form.city ? `${form.city}, ` : ""}
+            {form.state || "India"}
+          </p>
           <p className="text-sm text-muted-foreground">{form.pincode}</p>
-          <p className="mt-2 font-mono text-xs text-muted-foreground">{form.latitude}, {form.longitude}</p>
+          <p className="mt-2 font-mono text-xs text-muted-foreground">
+            {form.latitude}, {form.longitude}
+          </p>
         </aside>
       </div>
     </div>

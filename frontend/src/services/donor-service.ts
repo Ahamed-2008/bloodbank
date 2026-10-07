@@ -1,85 +1,147 @@
-import {
-  mockAlerts,
-  mockDonations,
-  mockDonorLocation,
-  mockDonorProfile,
-  mockDonorStats,
-  mockEligibility,
-  mockNotificationSettings,
-} from "@/lib/mock-data";
 import type {
-  BloodAlert,
-  DonationRecord,
-  DonorLocation,
+  ActiveDonationAlertsResponse,
+  AlertDetail,
+  CompleteProfileInput,
+  DonationHistoryRecord,
   DonorProfile,
   DonorStats,
   Eligibility,
   NotificationSettings,
+  UpdateLocationInput,
 } from "@/lib/types";
-import { mockDelay } from "./api-client";
-
-/**
- * Donor endpoints on the existing NestJS API (to be wired later):
- *   GET   /donors/me                      -> profile
- *   PATCH /donors/me                      -> profile
- *   GET   /donors/me/location             -> location
- *   PATCH /donors/me/location             -> location
- *   GET   /donors/me/eligibility          -> eligibility
- *   GET   /donors/me/stats                -> stats
- *   GET   /donors/me/donations            -> donation history
- *   GET   /alerts/nearby                  -> active alerts
- *   POST  /alerts/:id/respond             -> accept / decline
- *   PATCH /donors/me/notification-settings
- */
-
-let profile: DonorProfile = { ...mockDonorProfile };
-let location: DonorLocation = { ...mockDonorLocation };
-let settings: NotificationSettings = { ...mockNotificationSettings };
-let alerts: BloodAlert[] = mockAlerts.map((alert) => ({ ...alert }));
+import { apiRequest } from "./api-client";
 
 export const donorService = {
-  getProfile: (): Promise<DonorProfile> => mockDelay({ ...profile }),
-
-  updateProfile: async (input: Partial<DonorProfile>): Promise<DonorProfile> => {
-    profile = { ...profile, ...input };
-    return mockDelay({ ...profile }, 600);
+  /**
+   * GET /api/v1/users/profile
+   * Returns current donor's profile.
+   */
+  getProfile: (): Promise<DonorProfile> => {
+    return apiRequest<DonorProfile>("/users/profile");
   },
 
-  getLocation: (): Promise<DonorLocation> => mockDelay({ ...location }),
-
-  updateLocation: async (input: DonorLocation): Promise<DonorLocation> => {
-    location = { ...input };
-    return mockDelay({ ...location }, 600);
+  /**
+   * PUT /api/v1/users/profile
+   * Updates or completes donor onboarding profile.
+   */
+  updateProfile: (input: CompleteProfileInput): Promise<DonorProfile> => {
+    return apiRequest<DonorProfile>("/users/profile", {
+      method: "PUT",
+      body: input,
+    });
   },
 
-  getNotificationSettings: (): Promise<NotificationSettings> => mockDelay({ ...settings }),
+  /**
+   * PUT /api/v1/users/location
+   * Saves or updates donor primary GPS coordinates and pincode.
+   */
+  updateLocation: (input: UpdateLocationInput): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>("/users/location", {
+      method: "PUT",
+      body: input,
+    });
+  },
 
-  updateNotificationSettings: async (
+  /**
+   * GET /api/v1/users/eligibility
+   * Returns current donation eligibility and remaining recovery days.
+   */
+  getEligibility: (): Promise<Eligibility> => {
+    return apiRequest<Eligibility>("/users/eligibility");
+  },
+
+  /**
+   * PUT /api/v1/users/notifications
+   * Updates notification enabled status and alert radius (km).
+   */
+  updateNotificationSettings: (
     input: NotificationSettings,
-  ): Promise<NotificationSettings> => {
-    settings = { ...input };
-    return mockDelay({ ...settings }, 600);
+  ): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>("/users/notifications", {
+      method: "PUT",
+      body: input,
+    });
   },
 
-  getEligibility: (): Promise<Eligibility> => mockDelay({ ...mockEligibility }),
-
-  getStats: (): Promise<DonorStats> => mockDelay({ ...mockDonorStats }),
-
-  getDonations: (): Promise<DonationRecord[]> => mockDelay(mockDonations.map((d) => ({ ...d }))),
-
-  getAlerts: (): Promise<BloodAlert[]> => mockDelay(alerts.map((a) => ({ ...a }))),
-
-  getAlert: async (id: string): Promise<BloodAlert> => {
-    const found = alerts.find((a) => a.id === id);
-    if (!found) throw new Error("This blood request could not be found.");
-    return mockDelay({ ...found });
+  /**
+   * PUT /api/v1/users/availability
+   * Toggles donor availability (true to be matched, false to pause).
+   */
+  updateAvailability: (is_available: boolean): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>("/users/availability", {
+      method: "PUT",
+      body: { is_available },
+    });
   },
 
-  respondToAlert: async (id: string, decision: "accepted" | "declined"): Promise<BloodAlert> => {
-    await mockDelay(null, 650);
-    alerts = alerts.map((a) => (a.id === id ? { ...a, myResponse: decision } : a));
-    const updated = alerts.find((a) => a.id === id);
-    if (!updated) throw new Error("This blood request could not be found.");
-    return { ...updated };
+  /**
+   * GET /api/v1/donations/active
+   * Returns active, unexpired alerts matching donor's blood group within radius.
+   */
+  getActiveAlerts: (): Promise<ActiveDonationAlertsResponse> => {
+    return apiRequest<ActiveDonationAlertsResponse>("/donations/active");
+  },
+
+  /**
+   * GET /api/v1/alerts/:id
+   * Returns single blood alert detail with hospital information.
+   */
+  getAlert: (id: string): Promise<AlertDetail> => {
+    return apiRequest<AlertDetail>(`/alerts/${encodeURIComponent(id)}`);
+  },
+
+  /**
+   * POST /api/v1/donations/:alertId/accept
+   * Accepts a blood alert, optionally providing estimated arrival time (minutes).
+   */
+  acceptAlert: (
+    alertId: string,
+    eta_minutes?: number,
+  ): Promise<{
+    message: string;
+    response_id: string;
+    hospital: { name: string | null; address: string | null };
+    eta_minutes?: number;
+  }> => {
+    return apiRequest(`/donations/${encodeURIComponent(alertId)}/accept`, {
+      method: "POST",
+      body: eta_minutes ? { eta_minutes } : {},
+    });
+  },
+
+  /**
+   * POST /api/v1/donations/:alertId/decline
+   * Declines a blood alert for this donor.
+   */
+  declineAlert: (alertId: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>(`/donations/${encodeURIComponent(alertId)}/decline`, {
+      method: "POST",
+    });
+  },
+
+  /**
+   * PUT /api/v1/donations/:alertId/arrived
+   * Confirms donor arrival at the hospital for an accepted alert.
+   */
+  markArrived: (alertId: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>(`/donations/${encodeURIComponent(alertId)}/arrived`, {
+      method: "PUT",
+    });
+  },
+
+  /**
+   * GET /api/v1/donations/history
+   * Lists past donation responses and statuses for this donor.
+   */
+  getDonations: (): Promise<DonationHistoryRecord[]> => {
+    return apiRequest<DonationHistoryRecord[]>("/donations/history");
+  },
+
+  /**
+   * GET /api/v1/donations/stats
+   * Returns lifetime donor stats, score, tier, and reward points.
+   */
+  getStats: (): Promise<DonorStats> => {
+    return apiRequest<DonorStats>("/donations/stats");
   },
 };
