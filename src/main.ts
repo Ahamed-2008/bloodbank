@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
@@ -9,6 +10,29 @@ const packageJson = require('../package.json');
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const logger = new Logger('HTTP');
+  const configService = app.get(ConfigService);
+  const demoAuthEnabled = configService.get<string>('DEMO_AUTH_ENABLED') === 'true';
+  const nodeEnv = configService.get<string>('NODE_ENV');
+
+  if (demoAuthEnabled && nodeEnv === 'production') {
+    throw new Error('DEMO_AUTH_ENABLED cannot be true when NODE_ENV is production.');
+  }
+
+  if (demoAuthEnabled) {
+    logger.warn('DEMO AUTH ENABLED - fixed OTP login is active');
+  }
+
+  const configuredCorsOrigins = configService.get<string>('CORS_ORIGINS');
+  const corsOrigins = configuredCorsOrigins === undefined
+    ? ['http://localhost:5173', 'http://localhost:4200']
+    : configuredCorsOrigins.split(',').map((origin) => origin.trim()).filter(Boolean);
+
+  app.enableCors({
+    origin: corsOrigins,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: false,
+  });
 
   app.use((req, res, next) => {
     const startedAt = Date.now();
@@ -45,7 +69,10 @@ async function bootstrap() {
     .addBearerAuth()
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, swaggerDocument);
+  SwaggerModule.setup('docs', app, swaggerDocument, {
+    useGlobalPrefix: true,
+    jsonDocumentUrl: 'docs-json',
+  });
 
   await app.listen(process.env.PORT ?? 3000);
   console.log(`Server running on http://localhost:3000/api/v1`);

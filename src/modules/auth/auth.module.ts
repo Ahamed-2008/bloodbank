@@ -30,6 +30,8 @@ function initializeFirebase(configService: ConfigService) {
     return;
   }
 
+  if (configService.get<string>('DEMO_AUTH_ENABLED') === 'true') return;
+
   throw new Error('Firebase service account not configured. Set GOOGLE_APPLICATION_CREDENTIALS or FIREBASE_SERVICE_ACCOUNT_KEY');
 }
 

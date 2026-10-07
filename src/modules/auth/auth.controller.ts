@@ -1,7 +1,8 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { VerifyIdTokenDto } from './auth.dto';
-import { ApiTags } from '@nestjs/swagger';
+import { DemoSignInDto } from './demo-sign-in.dto';
+import { ApiBody, ApiTags } from '@nestjs/swagger';
 
 @Controller('auth')
 @ApiTags('Auth')
@@ -15,5 +16,12 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   signIn(@Body() dto: VerifyIdTokenDto) {
     return this.authService.signInWithFirebaseToken(dto.idToken);
+  }
+
+  @Post('demo-sign-in')
+  @HttpCode(HttpStatus.OK)
+  @ApiBody({ type: DemoSignInDto })
+  demoSignIn(@Body() dto: DemoSignInDto) {
+    return this.authService.signInWithDemoCredentials(dto.phone, dto.otp);
   }
 }
