@@ -14,7 +14,10 @@ export const Route = createFileRoute("/hospital/alerts/")({
   head: () => ({
     meta: [
       { title: "My blood alerts — BloodLink" },
-      { name: "description", content: "All blood alerts raised by your hospital with status, units and responses." },
+      {
+        name: "description",
+        content: "All blood alerts raised by your hospital with status, units and responses.",
+      },
       { property: "og:title", content: "My blood alerts — BloodLink" },
       { property: "og:description", content: "Track every blood alert your hospital has raised." },
     ],
@@ -23,57 +26,101 @@ export const Route = createFileRoute("/hospital/alerts/")({
 });
 
 function MyAlertsPage() {
-  const q = useQuery({ queryKey: ["hospital", "alerts"], queryFn: hospitalService.getAlerts });
+  const query = useQuery({
+    queryKey: ["hospital", "alerts"],
+    queryFn: hospitalService.getHospitalAlerts,
+  });
+
   const [filter, setFilter] = useState("all");
-  const rows = (q.data ?? []).filter((a) => filter === "all" || a.status === filter);
+
+  const alerts = query.data ?? [];
+  const rows = alerts.filter((a) => {
+    if (filter === "all") return true;
+    return a.status.toLowerCase() === filter.toLowerCase();
+  });
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="My alerts"
-        description="Every request raised by your hospital."
-        actions={<Button asChild><Link to="/hospital/alerts/new"><PlusCircle className="size-4" aria-hidden />New alert</Link></Button>}
+        title="Hospital alerts"
+        description="Every blood request broadcast by your hospital."
+        actions={
+          <Button asChild>
+            <Link to="/hospital/alerts/new">
+              <PlusCircle className="size-4" aria-hidden />
+              New blood alert
+            </Link>
+          </Button>
+        }
       />
+
       <Tabs value={filter} onValueChange={setFilter}>
         <TabsList>
           <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="open">Open</TabsTrigger>
+          <TabsTrigger value="active">Active</TabsTrigger>
           <TabsTrigger value="fulfilled">Fulfilled</TabsTrigger>
           <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
         </TabsList>
       </Tabs>
-      {q.isPending ? (
+
+      {query.isPending ? (
         <LoadingState />
-      ) : q.isError ? (
-        <ErrorState onRetry={() => void q.refetch()} />
+      ) : query.isError ? (
+        <ErrorState onRetry={() => void query.refetch()} />
       ) : rows.length === 0 ? (
-        <EmptyState title="No alerts here" description="Alerts matching this filter will appear here." />
+        <EmptyState
+          title="No alerts match this filter"
+          description="Alerts raised by your hospital will appear here."
+        />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border bg-card card-elevated">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Group</TableHead>
+                <TableHead>Blood Group</TableHead>
                 <TableHead>Units</TableHead>
                 <TableHead className="hidden md:table-cell">Urgency</TableHead>
-                <TableHead className="hidden md:table-cell">Created</TableHead>
+                <TableHead className="hidden lg:table-cell">Department</TableHead>
                 <TableHead className="hidden sm:table-cell">Responses</TableHead>
+                <TableHead className="hidden md:table-cell">Expires</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right"><span className="sr-only">Actions</span></TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((a) => (
-                <TableRow key={a.id}>
-                  <TableCell><BloodGroupBadge group={a.bloodGroup} size="sm" /></TableCell>
-                  <TableCell className="tabular-nums">{a.unitsFulfilled}/{a.unitsRequired}</TableCell>
-                  <TableCell className="hidden md:table-cell"><UrgencyBadge urgency={a.urgency} /></TableCell>
-                  <TableCell className="hidden whitespace-nowrap md:table-cell">{formatDateTime(a.createdAt)}</TableCell>
-                  <TableCell className="hidden sm:table-cell">{a.responseCount}</TableCell>
-                  <TableCell><StatusBadge status={a.status} /></TableCell>
+                <TableRow key={a.alert_id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <BloodGroupBadge group={a.blood_group} size="sm" />
+                      {a.patient_ref ? (
+                        <span className="text-xs text-muted-foreground">{a.patient_ref}</span>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className="tabular-nums font-medium">
+                    {a.units_fulfilled} / {a.units_needed}
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <UrgencyBadge urgency={a.urgency} />
+                  </TableCell>
+                  <TableCell className="hidden text-sm lg:table-cell">
+                    {a.department}
+                  </TableCell>
+                  <TableCell className="hidden text-sm sm:table-cell">
+                    {a.accepted_count} accepted ({a.notified_count} notified)
+                  </TableCell>
+                  <TableCell className="hidden whitespace-nowrap text-xs text-muted-foreground md:table-cell">
+                    {formatDateTime(a.expires_at)}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={a.status} />
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button asChild variant="outline" size="sm">
-                      <Link to="/hospital/alerts/$alertId" params={{ alertId: a.id }}>View</Link>
+                      <Link to="/hospital/alerts/$alertId" params={{ alertId: a.alert_id }}>
+                        Manage
+                      </Link>
                     </Button>
                   </TableCell>
                 </TableRow>

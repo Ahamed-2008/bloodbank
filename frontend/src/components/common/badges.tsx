@@ -1,12 +1,5 @@
 import { cn } from "@/lib/utils";
-import type {
-  AlertStatus,
-  BloodGroup,
-  DonationStatus,
-  ResponseStatus,
-  Urgency,
-  VerificationStatus,
-} from "@/lib/types";
+import type { BloodGroup, Urgency } from "@/lib/types";
 import { AlertTriangle, CheckCircle2, Clock, Droplet, XCircle } from "lucide-react";
 
 const chip =
@@ -41,51 +34,58 @@ export function BloodGroupBadge({
   );
 }
 
-export function UrgencyBadge({ urgency }: { urgency: Urgency }) {
-  const map: Record<Urgency, { label: string; className: string }> = {
-    critical: {
-      label: "Critical",
-      className: "border-destructive/30 bg-destructive/10 text-destructive",
-    },
-    urgent: { label: "Urgent", className: "border-warning/40 bg-warning-soft text-warning-foreground" },
-    routine: { label: "Routine", className: "border-info/30 bg-info-soft text-info" },
-  };
-  const item = map[urgency];
+export function UrgencyBadge({ urgency }: { urgency: Urgency | string }) {
+  const norm = urgency.toLowerCase();
+  let label = "Routine";
+  let className = "border-info/30 bg-info-soft text-info";
+  let isCritical = false;
+
+  if (norm === "critical") {
+    label = "Critical";
+    className = "border-destructive/30 bg-destructive/10 text-destructive";
+    isCritical = true;
+  } else if (norm === "high" || norm === "urgent") {
+    label = "High";
+    className = "border-warning/40 bg-warning-soft text-warning-foreground";
+  }
+
   return (
-    <span className={cn(chip, item.className)}>
-      {urgency === "critical" && <AlertTriangle className="size-3.5" aria-hidden />}
-      {item.label}
+    <span className={cn(chip, className)}>
+      {isCritical && <AlertTriangle className="size-3.5" aria-hidden />}
+      {label}
     </span>
   );
 }
 
-type AnyStatus =
-  | AlertStatus
-  | ResponseStatus
-  | DonationStatus
-  | VerificationStatus
-  | "eligible"
-  | "not_eligible";
-
-const STATUS_MAP: Record<AnyStatus, { label: string; className: string; icon?: "ok" | "no" | "wait" }> = {
+const STATUS_MAP: Record<string, { label: string; className: string; icon?: "ok" | "no" | "wait" }> = {
+  active: { label: "Active", className: "border-success/30 bg-success-soft text-success", icon: "ok" },
   open: { label: "Open", className: "border-success/30 bg-success-soft text-success", icon: "ok" },
   fulfilled: { label: "Fulfilled", className: "border-info/30 bg-info-soft text-info", icon: "ok" },
   cancelled: { label: "Cancelled", className: "border-border bg-muted text-muted-foreground", icon: "no" },
   expired: { label: "Expired", className: "border-border bg-muted text-muted-foreground", icon: "no" },
   pending: { label: "Pending", className: "border-warning/40 bg-warning-soft text-warning-foreground", icon: "wait" },
   accepted: { label: "Accepted", className: "border-info/30 bg-info-soft text-info", icon: "ok" },
+  arrived: { label: "Arrived", className: "border-primary/30 bg-primary-soft text-primary-deep", icon: "ok" },
+  donated: { label: "Donated", className: "border-success/30 bg-success-soft text-success", icon: "ok" },
   declined: { label: "Declined", className: "border-border bg-muted text-muted-foreground", icon: "no" },
   confirmed: { label: "Confirmed", className: "border-success/30 bg-success-soft text-success", icon: "ok" },
   completed: { label: "Completed", className: "border-success/30 bg-success-soft text-success", icon: "ok" },
+  noshow: { label: "No Show", className: "border-destructive/30 bg-destructive/10 text-destructive", icon: "no" },
   deferred: { label: "Deferred", className: "border-warning/40 bg-warning-soft text-warning-foreground", icon: "wait" },
   verified: { label: "Verified", className: "border-success/30 bg-success-soft text-success", icon: "ok" },
+  approved: { label: "Approved", className: "border-success/30 bg-success-soft text-success", icon: "ok" },
   rejected: { label: "Rejected", className: "border-destructive/30 bg-destructive/10 text-destructive", icon: "no" },
   eligible: { label: "Eligible to donate", className: "border-success/30 bg-success-soft text-success", icon: "ok" },
   not_eligible: { label: "Not eligible yet", className: "border-warning/40 bg-warning-soft text-warning-foreground", icon: "wait" },
 };
 
-export function StatusBadge({ status, className }: { status: AnyStatus; className?: string }) {
-  const item = STATUS_MAP[status];
+export function StatusBadge({ status, className }: { status: string; className?: string }) {
+  const norm = (status || "").toLowerCase().replace(/[\s_-]/g, "");
+  const item = STATUS_MAP[norm] ?? {
+    label: status,
+    className: "border-border bg-muted text-muted-foreground",
+  };
+
   return (
     <span className={cn(chip, item.className, className)}>
       {item.icon === "ok" && <CheckCircle2 className="size-3.5" aria-hidden />}

@@ -7,148 +7,261 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PageHeader } from "@/components/common/state";
-import { hospitalService, type CreateAlertInput } from "@/services/hospital-service";
-import { BLOOD_GROUPS, URGENCY_LEVELS } from "@/lib/types";
-import { titleCase } from "@/lib/format";
+import { hospitalService } from "@/services/hospital-service";
+import { formatApiError } from "@/services/api-client";
+import {
+  BLOOD_GROUPS,
+  DEPARTMENTS,
+  URGENCY_LEVELS,
+  type BloodGroup,
+  type Department,
+} from "@/lib/types";
 
 export const Route = createFileRoute("/hospital/alerts/new")({
   head: () => ({
     meta: [
       { title: "Create blood alert — BloodLink" },
-      { name: "description", content: "Raise a blood request and notify eligible donors near your hospital." },
+      {
+        name: "description",
+        content: "Raise an emergency blood request and notify eligible donors near your hospital.",
+      },
       { property: "og:title", content: "Create blood alert — BloodLink" },
-      { property: "og:description", content: "Notify nearby donors about an urgent blood need." },
+      { property: "og:description", content: "Broadcast urgent blood requirements to nearby donors." },
     ],
   }),
   component: CreateAlertPage,
 });
 
-type Form = Record<keyof CreateAlertInput, string>;
+interface FormState {
+  blood_group: BloodGroup;
+  units_needed: number;
+  urgency: "Critical" | "High" | "Normal";
+  department: Department;
+  patient_ref: string;
+  patient_condition: string;
+  radius_km: number;
+  auto_expand_radius: boolean;
+}
 
-const INITIAL: Form = {
-  bloodGroup: "", unitsRequired: "1", urgency: "urgent", patientCondition: "", neededBy: "",
-  contactPhone: "+91 80 4567 1200", address: "98 HAL Airport Road, Kodihalli", city: "Bengaluru",
-  state: "Karnataka", pincode: "560017", latitude: "12.9592", longitude: "77.6474", radiusKm: "10", notes: "",
+const INITIAL_FORM: FormState = {
+  blood_group: "O+",
+  units_needed: 1,
+  urgency: "Normal",
+  department: "Emergency",
+  patient_ref: "REF-001",
+  patient_condition: "Emergency requirement",
+  radius_km: 10,
+  auto_expand_radius: false,
 };
 
 function CreateAlertPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [form, setForm] = useState<Form>(INITIAL);
-  const [errors, setErrors] = useState<Partial<Record<keyof Form, string>>>({});
+  const [form, setForm] = useState<FormState>(INITIAL_FORM);
+  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
-  const create = useMutation({
+  const createAlertMutation = useMutation({
     mutationFn: hospitalService.createAlert,
-    onSuccess: (alert) => {
-      void qc.invalidateQueries({ queryKey: ["hospital"] });
-      toast.success("Alert sent to nearby donors");
-      void navigate({ to: "/hospital/alerts/$alertId", params: { alertId: alert.id } });
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ["hospital", "alerts"] });
+      toast.success(data.message || "Alert posted successfully.");
+      void navigate({
+        to: "/hospital/alerts/$alertId",
+        params: { alertId: data.alert.alert_id },
+      });
     },
-    onError: () => toast.error("Could not create the alert."),
+    onError: (err) => {
+      toast.error(formatApiError(err));
+    },
   });
-
-  const set = (k: keyof Form, v: string) => {
-    setForm((f) => ({ ...f, [k]: v }));
-    setErrors((e) => ({ ...e, [k]: undefined }));
-  };
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const err: Partial<Record<keyof Form, string>> = {};
-    if (!form.bloodGroup) err.bloodGroup = "Select a blood group.";
-    const units = Number(form.unitsRequired);
-    if (!Number.isInteger(units) || units < 1 || units > 20) err.unitsRequired = "Between 1 and 20 units.";
-    if (form.patientCondition.trim().length < 3) err.patientCondition = "Describe the patient's condition.";
-    if (!form.neededBy) err.neededBy = "Choose when blood is needed by.";
-    else if (new Date(form.neededBy) <= new Date()) err.neededBy = "Must be in the future.";
-    if (form.contactPhone.replace(/\D/g, "").length < 10) err.contactPhone = "Enter a valid phone number.";
-    if (!form.address.trim()) err.address = "Address is required.";
-    if (!/^\d{6}$/.test(form.pincode)) err.pincode = "6-digit pincode.";
-    if (Math.abs(Number(form.latitude)) > 90 || form.latitude === "") err.latitude = "Invalid latitude.";
-    if (Math.abs(Number(form.longitude)) > 180 || form.longitude === "") err.longitude = "Invalid longitude.";
-    const r = Number(form.radiusKm);
-    if (!(r >= 1 && r <= 50)) err.radiusKm = "Between 1 and 50 km.";
+    const err: Partial<Record<keyof FormState, string>> = {};
+
+    if (!form.blood_group) err.blood_group = "Select a blood group.";
+    if (!Number.isInteger(form.units_needed) || form.units_needed < 1 || form.units_needed > 10) {
+      err.units_needed = "Units needed must be an integer between 1 and 10.";
+    }
+    if (!form.department) err.department = "Select a department.";
+    if (form.patient_ref && form.patient_ref.length > 50) {
+      err.patient_ref = "Patient reference must be 50 characters or fewer.";
+    }
+    if (form.patient_condition && form.patient_condition.length > 500) {
+      err.patient_condition = "Patient condition must be 500 characters or fewer.";
+    }
+    if (form.radius_km < 1 || form.radius_km > 50) {
+      err.radius_km = "Search radius must be between 1 and 50 km.";
+    }
+
     setErrors(err);
-    if (Object.keys(err).length) return toast.error("Please fix the highlighted fields.");
-    create.mutate({
-      ...form,
-      unitsRequired: units,
-      latitude: Number(form.latitude),
-      longitude: Number(form.longitude),
-      radiusKm: r,
-      neededBy: new Date(form.neededBy).toISOString(),
+    if (Object.keys(err).length > 0) {
+      toast.error("Please fix the highlighted fields.");
+      return;
+    }
+
+    createAlertMutation.mutate({
+      blood_group: form.blood_group,
+      units_needed: form.units_needed,
+      urgency: form.urgency,
+      department: form.department,
+      patient_ref: form.patient_ref.trim() || undefined,
+      patient_condition: form.patient_condition.trim() || undefined,
+      radius_km: form.radius_km,
+      auto_expand_radius: form.auto_expand_radius,
     });
   }
 
-  const Err = ({ k }: { k: keyof Form }) =>
-    errors[k] ? <p role="alert" className="text-xs text-destructive">{errors[k]}</p> : null;
-  const input = (k: keyof Form, props: React.ComponentProps<typeof Input> = {}) => (
-    <Input id={k} value={form[k]} onChange={(e) => set(k, e.target.value)} aria-invalid={Boolean(errors[k])} {...props} />
-  );
-
   return (
     <div className="space-y-6">
-      <PageHeader title="Create blood alert" description="Eligible donors within the radius are notified immediately." />
-      <form onSubmit={submit} className="max-w-3xl space-y-6" noValidate>
-        <fieldset className="rounded-2xl border border-border bg-card p-6 card-elevated">
-          <legend className="px-1 text-sm font-semibold">Request</legend>
-          <div className="mt-4 grid gap-5 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="bloodGroup">Blood group</Label>
-              <Select value={form.bloodGroup} onValueChange={(v) => set("bloodGroup", v)}>
-                <SelectTrigger id="bloodGroup" aria-invalid={Boolean(errors.bloodGroup)}><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>{BLOOD_GROUPS.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
-              </Select>
-              <Err k="bloodGroup" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="unitsRequired">Units required</Label>
-              {input("unitsRequired", { type: "number", min: 1, max: 20 })}
-              <Err k="unitsRequired" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="urgency">Urgency</Label>
-              <Select value={form.urgency} onValueChange={(v) => set("urgency", v)}>
-                <SelectTrigger id="urgency"><SelectValue /></SelectTrigger>
-                <SelectContent>{URGENCY_LEVELS.map((u) => <SelectItem key={u} value={u}>{titleCase(u)}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="patientCondition">Patient condition</Label>
-              {input("patientCondition", { placeholder: "Post-surgical blood loss" })}
-              <Err k="patientCondition" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="neededBy">Needed by</Label>
-              {input("neededBy", { type: "datetime-local" })}
-              <Err k="neededBy" />
-            </div>
-          </div>
-        </fieldset>
+      <PageHeader
+        title="Create blood alert"
+        description="Notify eligible and compatible blood donors within your area."
+      />
 
+      <form onSubmit={submit} className="max-w-2xl space-y-6" noValidate>
         <fieldset className="rounded-2xl border border-border bg-card p-6 card-elevated">
-          <legend className="px-1 text-sm font-semibold">Location and contact</legend>
+          <legend className="px-1 text-sm font-semibold">Blood requirement details</legend>
           <div className="mt-4 grid gap-5 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="address">Address</Label>{input("address")}<Err k="address" /></div>
-            <div className="space-y-2"><Label htmlFor="city">City</Label>{input("city")}</div>
-            <div className="space-y-2"><Label htmlFor="state">State</Label>{input("state")}</div>
-            <div className="space-y-2"><Label htmlFor="pincode">Pincode</Label>{input("pincode", { inputMode: "numeric", maxLength: 6 })}<Err k="pincode" /></div>
-            <div className="space-y-2"><Label htmlFor="contactPhone">Contact phone</Label>{input("contactPhone", { type: "tel" })}<Err k="contactPhone" /></div>
-            <div className="space-y-2"><Label htmlFor="latitude">Latitude</Label>{input("latitude", { inputMode: "decimal" })}<Err k="latitude" /></div>
-            <div className="space-y-2"><Label htmlFor="longitude">Longitude</Label>{input("longitude", { inputMode: "decimal" })}<Err k="longitude" /></div>
-            <div className="space-y-2"><Label htmlFor="radiusKm">Alert radius (km)</Label>{input("radiusKm", { type: "number", min: 1, max: 50 })}<Err k="radiusKm" /></div>
+            <div className="space-y-2">
+              <Label htmlFor="blood_group">Blood group</Label>
+              <Select
+                value={form.blood_group}
+                onValueChange={(v) => setForm({ ...form, blood_group: v as BloodGroup })}
+              >
+                <SelectTrigger id="blood_group">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {BLOOD_GROUPS.map((g) => (
+                    <SelectItem key={g} value={g}>
+                      {g}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="units_needed">Units needed (1–10)</Label>
+              <Input
+                id="units_needed"
+                type="number"
+                min={1}
+                max={10}
+                value={form.units_needed}
+                onChange={(e) => setForm({ ...form, units_needed: parseInt(e.target.value, 10) || 1 })}
+              />
+              {errors.units_needed ? (
+                <p className="text-xs text-destructive">{errors.units_needed}</p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="urgency">Urgency level</Label>
+              <Select
+                value={form.urgency}
+                onValueChange={(v) => setForm({ ...form, urgency: v as FormState["urgency"] })}
+              >
+                <SelectTrigger id="urgency">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {URGENCY_LEVELS.map((u) => (
+                    <SelectItem key={u} value={u}>
+                      {u}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="department">Department</Label>
+              <Select
+                value={form.department}
+                onValueChange={(v) => setForm({ ...form, department: v as Department })}
+              >
+                <SelectTrigger id="department">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DEPARTMENTS.map((dept) => (
+                    <SelectItem key={dept} value={dept}>
+                      {dept}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="notes">Notes for donors (optional)</Label>
-              <Textarea id="notes" rows={3} value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Report to the blood bank on the ground floor." />
+              <Label htmlFor="patient_ref">Patient reference / Bed number (optional)</Label>
+              <Input
+                id="patient_ref"
+                value={form.patient_ref}
+                onChange={(e) => setForm({ ...form, patient_ref: e.target.value })}
+                placeholder="e.g. ICU-BED-04"
+                maxLength={50}
+              />
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="patient_condition">Clinical condition / Notes (optional)</Label>
+              <Textarea
+                id="patient_condition"
+                rows={3}
+                value={form.patient_condition}
+                onChange={(e) => setForm({ ...form, patient_condition: e.target.value })}
+                placeholder="Emergency surgery blood loss"
+                maxLength={500}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="radius_km">Search radius (1–50 km)</Label>
+              <Input
+                id="radius_km"
+                type="number"
+                min={1}
+                max={50}
+                value={form.radius_km}
+                onChange={(e) => setForm({ ...form, radius_km: parseInt(e.target.value, 10) || 10 })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-border p-3 sm:col-span-2">
+              <div>
+                <Label htmlFor="auto_expand" className="text-sm font-medium">
+                  Auto-expand radius
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Gradually increase notification radius if units are not fulfilled.
+                </p>
+              </div>
+              <Switch
+                id="auto_expand"
+                checked={form.auto_expand_radius}
+                onCheckedChange={(checked) => setForm({ ...form, auto_expand_radius: checked })}
+              />
             </div>
           </div>
         </fieldset>
 
-        <Button type="submit" size="lg" disabled={create.isPending}>
-          {create.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-          Send alert
+        <Button type="submit" size="lg" disabled={createAlertMutation.isPending}>
+          {createAlertMutation.isPending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : null}
+          Broadcast blood alert
         </Button>
       </form>
     </div>
